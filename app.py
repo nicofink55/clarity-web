@@ -356,7 +356,10 @@ def run_valuation():
 # ════════════════════════════════════════
 
 with st.sidebar:
-    st.markdown('<div style="padding: 4px 0 12px 0"><span style="font-family: JetBrains Mono, monospace; font-size: 1.5rem; font-weight: 800; color: #e2e8f0; letter-spacing: -0.02em;">Clarity</span><br><span style="color: #4b5563; font-size: 0.75rem; font-family: Inter, sans-serif;">Multi-Model Valuation Engine</span></div>', unsafe_allow_html=True)
+    st.markdown("""<div style="display:flex;align-items:center;gap:12px;padding:4px 0 12px 0">
+        <div style="width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#3ecf8e,#1a9a6a);display:flex;align-items:center;justify-content:center;font-family:JetBrains Mono,monospace;font-weight:800;font-size:1.2rem;color:#060910;box-shadow:0 4px 16px rgba(62,207,142,0.25)">C</div>
+        <div><span style="font-family:JetBrains Mono,monospace;font-size:1.3rem;font-weight:700;color:#e2e8f0;letter-spacing:-0.02em">Clarity</span><br><span style="color:#3d4655;font-size:0.65rem;font-family:Inter,sans-serif;letter-spacing:0.06em;text-transform:uppercase">Valuation Engine</span></div>
+    </div>""", unsafe_allow_html=True)
     st.markdown('<hr style="margin: 0 0 16px 0; border-color: #1a1f2e">', unsafe_allow_html=True)
 
     st.markdown('<div class="sidebar-section">Pull Filing</div>', unsafe_allow_html=True)
@@ -758,30 +761,40 @@ with tab_scenarios:
                                    f'<span class="num">${s["fv"]:,.2f}</span>', up_str])
         st.markdown(f'<div class="section-card"><h4>DCF Scenario Analysis</h4>{html_table(["Scenario", "Probability", "Fair Value", "Upside"], table_rows)}</div>', unsafe_allow_html=True)
 
-        # Bar chart
+        # Horizon-style horizontal scenario bars
         names = [s['name'] for s in scens if isinstance(s, dict)]
         fvs = [s['fv'] for s in scens if isinstance(s, dict)]
         probs = [s['prob'] for s in scens if isinstance(s, dict)]
-        colors = ['#22c55e' if f > price else '#f85149' if f < price * 0.9 else '#d29922' for f in fvs]
+        max_fv = max(fvs) if fvs else 1
 
-        fig_s = go.Figure()
-        fig_s.add_trace(go.Bar(
-            x=names, y=fvs, marker_color=colors, marker_line=dict(width=0),
-            text=[f"${f:,.0f}<br><span style='font-size:10px'>{p*100:.0f}%</span>" for f, p in zip(fvs, probs)],
-            textposition='outside', textfont=dict(color='#cbd5e1', size=12, family='JetBrains Mono'),
-            hovertemplate='%{x}: $%{y:,.2f}<extra></extra>',
-        ))
-        fig_s.add_hline(y=price, line_dash="dot", line_color="rgba(248,81,73,0.5)", line_width=2,
-                         annotation_text=f"Market ${price:,.0f}", annotation_font=dict(color="#f85149", size=11, family="JetBrains Mono"))
-        fig_s.update_layout(
-            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-            xaxis=dict(color='#94a3b8', tickfont=dict(size=11, family='Inter')),
-            yaxis=dict(color='#64748b', gridcolor='rgba(30,37,54,0.5)', tickformat='$,.0f', zeroline=False,
-                       tickfont=dict(family='JetBrains Mono', size=11)),
-            height=320, margin=dict(l=50, r=20, t=30, b=40),
-            bargap=0.3,
-        )
-        st.plotly_chart(fig_s, use_container_width=True)
+        bars_html = ''
+        for name, fv_val, prob in zip(names, fvs, probs):
+            pct = (fv_val / max_fv) * 100
+            above = fv_val >= price
+            bar_col = 'linear-gradient(90deg, rgba(62,207,142,0.3), rgba(62,207,142,0.6))' if above else 'linear-gradient(90deg, rgba(248,81,73,0.3), rgba(248,81,73,0.6))'
+            txt_col = '#3ecf8e' if above else '#f85149'
+            up_pct = (fv_val - price) / price * 100 if price > 0 else 0
+            bars_html += f'''<div style="display:grid;grid-template-columns:140px 1fr 90px 70px;align-items:center;gap:12px;margin-bottom:6px">
+                <div style="font-family:Inter,sans-serif;font-size:0.82rem;color:#8b95a8">{name}</div>
+                <div style="position:relative;height:28px;background:rgba(62,207,142,0.04);border-radius:6px;overflow:hidden">
+                    <div style="position:absolute;left:0;top:0;bottom:0;width:{pct:.1f}%;background:{bar_col};border-radius:6px;transition:width 0.6s ease"></div>
+                    <div style="position:absolute;left:{min(price/max_fv*100, 98):.1f}%;top:0;bottom:0;width:1px;background:rgba(248,81,73,0.4)"></div>
+                </div>
+                <div style="font-family:JetBrains Mono,monospace;font-size:0.85rem;font-weight:600;color:#e2e8f0;text-align:right">${fv_val:,.0f}</div>
+                <div style="font-family:JetBrains Mono,monospace;font-size:0.75rem;color:{txt_col};text-align:right">{up_pct:+.0f}%</div>
+            </div>'''
+        # Probability row
+        bars_html += '<div style="display:grid;grid-template-columns:140px 1fr 90px 70px;align-items:center;gap:12px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(62,207,142,0.06)">'
+        bars_html += '<div style="color:#3d4655;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;font-family:Inter,sans-serif">Probability</div>'
+        prob_bar = '<div style="display:flex;height:6px;border-radius:3px;overflow:hidden;gap:1px">'
+        p_colors = ['#22c55e','#3b82f6','#94a3b8','#f59e0b','#ef4444']
+        for i, (p, c) in enumerate(zip(probs, p_colors)):
+            prob_bar += f'<div style="width:{p*100:.1f}%;background:{c};border-radius:3px" title="{names[i]}: {p*100:.0f}%"></div>'
+        prob_bar += '</div>'
+        bars_html += f'<div>{prob_bar}</div>'
+        bars_html += f'<div style="color:#3d4655;font-size:0.7rem;font-family:JetBrains Mono,monospace;text-align:right">Mkt ${price:,.0f}</div><div></div></div>'
+
+        st.markdown(f'<div class="section-card" style="padding:20px 24px"><h4 style="margin-bottom:14px">Scenario Spectrum</h4>{bars_html}</div>', unsafe_allow_html=True)
 
     # Growth metrics
     tg = r.get('trailing_growth', r.get('trailing'))
@@ -882,57 +895,57 @@ with tab_context:
     if not has_data:
         st.info("No market context data available.")
     else:
-        if mi:
-            cagr = mi.get('implied_rev_cagr')
-            if isinstance(cagr, str):
-                content = f'<div style="color:#f85149;font-family:JetBrains Mono,monospace">Implied Rev CAGR: {cagr}</div>'
-            else:
-                ps = mi.get('implied_ps_now')
-                content = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">'
-                content += f'<div style="text-align:center"><div style="color:#64748b;font-size:0.65rem;text-transform:uppercase;font-family:Inter,sans-serif">Implied Rev CAGR</div><div style="font-family:JetBrains Mono,monospace;font-weight:600;font-size:1.4rem;color:#3ecf8e;margin-top:4px">{cagr:.1f}%</div></div>'
-                content += f'<div style="text-align:center"><div style="color:#64748b;font-size:0.65rem;text-transform:uppercase;font-family:Inter,sans-serif">At Margin</div><div style="font-family:JetBrains Mono,monospace;font-weight:600;font-size:1.4rem;color:#e2e8f0;margin-top:4px">{mi.get("assumed_margin","")}%</div></div>'
-                if ps: content += f'<div style="text-align:center"><div style="color:#64748b;font-size:0.65rem;text-transform:uppercase;font-family:Inter,sans-serif">Current P/S</div><div style="font-family:JetBrains Mono,monospace;font-weight:600;font-size:1.4rem;color:#e2e8f0;margin-top:4px">{ps:.1f}x</div></div>'
+        # Row 1: Market-Implied Growth + Comps side-by-side
+        ctx_c1, ctx_c2 = st.columns(2)
+        with ctx_c1:
+            if mi:
+                cagr = mi.get('implied_rev_cagr')
+                if isinstance(cagr, str):
+                    content = f'<div style="color:#f85149;font-family:JetBrains Mono,monospace;font-size:0.9rem">Implied CAGR: {cagr}</div>'
+                else:
+                    ps = mi.get('implied_ps_now')
+                    content = '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">'
+                    content += f'<div style="text-align:center"><div style="color:#5a6478;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;font-family:Inter,sans-serif">Rev CAGR</div><div style="font-family:JetBrains Mono,monospace;font-weight:600;font-size:1.2rem;color:#3ecf8e;margin-top:4px">{cagr:.1f}%</div></div>'
+                    content += f'<div style="text-align:center"><div style="color:#5a6478;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;font-family:Inter,sans-serif">At Margin</div><div style="font-family:JetBrains Mono,monospace;font-weight:600;font-size:1.2rem;color:#c0c8d8;margin-top:4px">{mi.get("assumed_margin","")}%</div></div>'
+                    if ps: content += f'<div style="text-align:center"><div style="color:#5a6478;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;font-family:Inter,sans-serif">P/S</div><div style="font-family:JetBrains Mono,monospace;font-weight:600;font-size:1.2rem;color:#c0c8d8;margin-top:4px">{ps:.1f}x</div></div>'
+                    content += '</div>'
+                st.markdown(f'<div class="section-card"><h4>Market-Implied Growth</h4>{content}</div>', unsafe_allow_html=True)
+        with ctx_c2:
+            if cc:
+                cpe = cc.get('current_pe')
+                if cpe:
+                    src = cc.get('comps_source', 'static')
+                    rows = [[f'<span class="num">{cpe:.1f}x</span>', f'<span class="num">{cc["sector_pe"]}x</span>', f'<span class="num">${cc["pe_fv"]:,.2f}</span>']]
+                    eveb = cc.get('evebitda_fv')
+                    if eveb:
+                        rows.append([f'<span class="dim">EV/EBITDA</span>', f'<span class="num">{cc["sector_evebitda"]}x</span>', f'<span class="num">${eveb:,.0f}</span>'])
+                    content = html_table(["P/E", f"Sector ({src})", "Fair Value"], rows)
+                    st.markdown(f'<div class="section-card"><h4>Comparable Companies</h4>{content}</div>', unsafe_allow_html=True)
+
+        # Row 2: EV/Revenue + Asset Floor side-by-side
+        ctx_c3, ctx_c4 = st.columns(2)
+        with ctx_c3:
+            if evr:
+                prem = evr['premium_pct']
+                prem_col = "#f85149" if prem > 50 else "#d29922" if prem > 0 else "#3ecf8e"
+                content = '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">'
+                content += f'<div style="text-align:center"><div style="color:#5a6478;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;font-family:Inter,sans-serif">Current</div><div style="font-family:JetBrains Mono,monospace;font-weight:600;font-size:1.2rem;color:#c0c8d8;margin-top:4px">{evr["current"]:.1f}x</div></div>'
+                content += f'<div style="text-align:center"><div style="color:#5a6478;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;font-family:Inter,sans-serif">Sector</div><div style="font-family:JetBrains Mono,monospace;font-weight:600;font-size:1.2rem;color:#c0c8d8;margin-top:4px">{evr["sector_median"]:.1f}x</div></div>'
+                content += f'<div style="text-align:center"><div style="color:#5a6478;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;font-family:Inter,sans-serif">Premium</div><div style="font-family:JetBrains Mono,monospace;font-weight:600;font-size:1.2rem;color:{prem_col};margin-top:4px">{prem:+.0f}%</div></div>'
                 content += '</div>'
-            st.markdown(f'<div class="section-card"><h4>Market-Implied Growth</h4>{content}</div>', unsafe_allow_html=True)
-
-        if cc:
-            cpe = cc.get('current_pe')
-            if cpe:
-                src = cc.get('comps_source', 'static')
-                rows = [
-                    [f'<span class="num">{cpe:.1f}x</span>', f'<span class="num">{cc["sector_pe"]}x</span>', f'<span class="num">${cc["pe_fv"]:,.2f}</span>'],
-                ]
-                eveb = cc.get('evebitda_fv')
-                if eveb:
-                    rows.append([f'<span class="dim">EV/EBITDA</span>', f'<span class="num">{cc["sector_evebitda"]}x</span>', f'<span class="num">${eveb:,.0f}</span>'])
-                content = html_table(["Current P/E", f"Sector P/E ({src})", "P/E Fair Value"], rows)
-                pb = cc.get('pb_now')
-                if pb:
-                    jpb = cc.get('pb_justified')
-                    content += f'<div style="margin-top:8px;color:#475569;font-size:0.75rem">P/B: {pb:.2f}x' + (f' (justified {jpb:.2f}x)' if jpb else '') + '</div>'
-                st.markdown(f'<div class="section-card"><h4>Comparable Companies</h4>{content}</div>', unsafe_allow_html=True)
-
-        if evr:
-            prem = evr['premium_pct']
-            prem_col = "#f85149" if prem > 50 else "#d29922" if prem > 0 else "#3ecf8e"
-            content = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">'
-            content += f'<div style="text-align:center"><div style="color:#64748b;font-size:0.65rem;text-transform:uppercase;font-family:Inter,sans-serif">Current</div><div style="font-family:JetBrains Mono,monospace;font-weight:600;font-size:1.4rem;color:#e2e8f0;margin-top:4px">{evr["current"]:.1f}x</div></div>'
-            content += f'<div style="text-align:center"><div style="color:#64748b;font-size:0.65rem;text-transform:uppercase;font-family:Inter,sans-serif">Sector Median</div><div style="font-family:JetBrains Mono,monospace;font-weight:600;font-size:1.4rem;color:#e2e8f0;margin-top:4px">{evr["sector_median"]:.1f}x</div></div>'
-            content += f'<div style="text-align:center"><div style="color:#64748b;font-size:0.65rem;text-transform:uppercase;font-family:Inter,sans-serif">Premium</div><div style="font-family:JetBrains Mono,monospace;font-weight:600;font-size:1.4rem;color:{prem_col};margin-top:4px">{prem:+.0f}%</div></div>'
-            content += '</div>'
-            if evr.get('at_median_price'):
-                content += f'<div style="color:#475569;font-size:0.75rem;margin-top:8px">At sector median: ${evr["at_median_price"]:,.2f}/share</div>'
-            st.markdown(f'<div class="section-card"><h4>EV / Revenue</h4>{content}</div>', unsafe_allow_html=True)
-
-        if af:
-            btp = af.get('book_to_price')
-            content = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">'
-            content += f'<div style="text-align:center"><div style="color:#64748b;font-size:0.65rem;text-transform:uppercase;font-family:Inter,sans-serif">Book / Share</div><div style="font-family:JetBrains Mono,monospace;font-weight:600;font-size:1.4rem;color:#e2e8f0;margin-top:4px">${af["book_per_share"]:,.2f}</div></div>'
-            content += f'<div style="text-align:center"><div style="color:#64748b;font-size:0.65rem;text-transform:uppercase;font-family:Inter,sans-serif">Tangible Floor</div><div style="font-family:JetBrains Mono,monospace;font-weight:600;font-size:1.4rem;color:#e2e8f0;margin-top:4px">${af["tangible_floor"]:,.2f}</div></div>'
-            if btp:
-                content += f'<div style="text-align:center"><div style="color:#64748b;font-size:0.65rem;text-transform:uppercase;font-family:Inter,sans-serif">Book % of Price</div><div style="font-family:JetBrains Mono,monospace;font-weight:600;font-size:1.4rem;color:#e2e8f0;margin-top:4px">{btp:.0f}%</div></div>'
-            content += '</div>'
-            st.markdown(f'<div class="section-card"><h4>Asset Floor</h4>{content}</div>', unsafe_allow_html=True)
+                if evr.get('at_median_price'):
+                    content += f'<div style="color:#3d4655;font-size:0.7rem;margin-top:6px;font-family:Inter,sans-serif">At sector median: ${evr["at_median_price"]:,.2f}/share</div>'
+                st.markdown(f'<div class="section-card"><h4>EV / Revenue</h4>{content}</div>', unsafe_allow_html=True)
+        with ctx_c4:
+            if af:
+                btp = af.get('book_to_price')
+                content = '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">'
+                content += f'<div style="text-align:center"><div style="color:#5a6478;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;font-family:Inter,sans-serif">Book/Share</div><div style="font-family:JetBrains Mono,monospace;font-weight:600;font-size:1.2rem;color:#c0c8d8;margin-top:4px">${af["book_per_share"]:,.2f}</div></div>'
+                content += f'<div style="text-align:center"><div style="color:#5a6478;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;font-family:Inter,sans-serif">Tangible</div><div style="font-family:JetBrains Mono,monospace;font-weight:600;font-size:1.2rem;color:#c0c8d8;margin-top:4px">${af["tangible_floor"]:,.2f}</div></div>'
+                if btp:
+                    content += f'<div style="text-align:center"><div style="color:#5a6478;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.1em;font-family:Inter,sans-serif">Book %</div><div style="font-family:JetBrains Mono,monospace;font-weight:600;font-size:1.2rem;color:#c0c8d8;margin-top:4px">{btp:.0f}%</div></div>'
+                content += '</div>'
+                st.markdown(f'<div class="section-card"><h4>Asset Floor</h4>{content}</div>', unsafe_allow_html=True)
 
     # Footer notes
     if r.get('is_buyback_machine'):
