@@ -344,7 +344,7 @@ for key, default in [('fins', None), ('dcf_result', None), ('ticker', ''), ('pri
     ('shares_mil', 0.0), ('sector', 'general'), ('beta', None),
     ('data_quality', {'quarters_available': 1}), ('log_messages', []),
     ('shares_source', ''), ('company_name', ''), ('filing_loaded', False),
-    ('auto_loaded', False)]:
+    ('auto_loaded', False), ('filing_info', ''), ('price_ts', '')]:
     if key not in st.session_state:
         st.session_state[key] = default
 
@@ -358,6 +358,7 @@ def quick_run(ticker_val, form="10-K"):
     cik, name = lookup_cik(ticker_val)
     st.session_state.company_name = name
     info = find_filing(cik, form)
+    st.session_state.filing_info = f"{info.get('form', form)} · Filed {info.get('date', '?')}"
     with tempfile.TemporaryDirectory() as tmpdir:
         path, size = download_filing(info, tmpdir)
         if path.lower().endswith('.pdf'): st.session_state.fins = parse_pdf(path)
@@ -370,6 +371,7 @@ def quick_run(ticker_val, form="10-K"):
     st.session_state.shares_mil = data['shares_mil']
     st.session_state.company_name = data.get('name', ticker_val)
     st.session_state.beta = data.get('beta')
+    st.session_state.price_ts = time.strftime("%b %d, %Y · %I:%M %p", time.localtime())
     try:
         live_comps = fetch_live_comps(st.session_state.sector, log_fn=lambda m, t: log(m, t))
         if live_comps: st.session_state.fins['_live_comps'] = live_comps
@@ -458,6 +460,7 @@ with st.sidebar:
                 progress.progress(30, f"Found {name}...")
                 info = find_filing(cik, form_type)
                 log(f"Found {info['form']} filed {info['date']}", "ok")
+                st.session_state.filing_info = f"{info.get('form', form_type)} · Filed {info.get('date', '?')}"
                 progress.progress(50, "Downloading...")
                 with tempfile.TemporaryDirectory() as tmpdir:
                     path, size = download_filing(info, tmpdir)
@@ -486,6 +489,7 @@ with st.sidebar:
                         st.session_state.shares_mil = filing_shares
                         log(f"Shares corrected: {data['shares_mil']:.0f}M → {filing_shares:.0f}M", "warn")
                 log(f"Market: ${data['price']:.2f} | {st.session_state.shares_mil:.1f}M shares", "ok")
+                st.session_state.price_ts = time.strftime("%b %d, %Y · %I:%M %p", time.localtime())
             except Exception as e:
                 log(f"Market data failed: {e}", "warn")
                 status.warning(f"Market data failed: {e}")
@@ -595,14 +599,18 @@ if not st.session_state.dcf_result:
         _, search_col, _ = st.columns([1, 2, 1])
         with search_col:
             with st.form("landing_search", clear_on_submit=False):
-                search_ticker = st.text_input("Search", placeholder="Enter any ticker — AAPL, NVDA, MSFT, SEZL...",
-                                               label_visibility="collapsed").upper().strip()
+                s_c1, s_c2 = st.columns([3, 1])
+                with s_c1:
+                    search_ticker = st.text_input("Search", placeholder="Enter any ticker — AAPL, NVDA, MSFT...",
+                                                   label_visibility="collapsed").upper().strip()
+                with s_c2:
+                    search_form = st.selectbox("Filing", ["10-K", "10-Q"], label_visibility="collapsed")
                 search_go = st.form_submit_button("Analyze", use_container_width=True, type="primary")
 
         if search_go and search_ticker:
             try:
                 with st.spinner(f"Analyzing {search_ticker}..."):
-                    quick_run(search_ticker)
+                    quick_run(search_ticker, form=search_form)
                 st.query_params["ticker"] = search_ticker
                 st.session_state.auto_loaded = True
                 st.rerun()
@@ -681,14 +689,48 @@ company = st.session_state.company_name or ""
 
 # ── Header ──
 display_name = company if company and company.upper() != ticker else ""
-st.markdown(f'<div style="display:flex;align-items:baseline;gap:14px;margin-bottom:8px;padding-top:4px"><span style="font-family:JetBrains Mono,monospace;font-size:2rem;font-weight:800;color:#e2e8f0;letter-spacing:-0.02em">{ticker}</span>{f"""<span style="color:#4b5563;font-size:0.95rem;font-family:Inter,sans-serif;font-weight:400">{display_name}</span>""" if display_name else ""}</div>', unsafe_allow_html=True)
+filing_info = st.session_state.filing_info or ""
+header_html = f'<div style="display:flex;align-items:baseline;gap:14px;margin-bottom:4px;padding-top:4px;flex-wrap:wrap">'
+header_html += f'<span style="font-family:JetBrains Mono,monospace;font-size:2rem;font-weight:800;color:#e2e8f0;letter-spacing:-0.02em">{ticker}</span>'
+if display_name:
+    header_html += f'<span style="color:#4b5563;font-size:0.95rem;font-family:Inter,sans-serif;font-weight:400">{display_name}</span>'
+if filing_info:
+    header_html += f'<span style="color:#3d4655;font-size:0.65rem;font-family:JetBrains Mono,monospace;background:rgba(62,207,142,0.06);border:1px solid rgba(62,207,142,0.1);border-radius:6px;padding:3px 10px;letter-spacing:0.02em">{filing_info}</span>'
+header_html += '</div>'
+st.markdown(header_html, unsafe_allow_html=True)
+
+# ── Sector verification bar ──
+sector_name = SECTOR_NAMES.get(sector, sector)
+confidence = st.session_state.fins.get('_sector_conf', 'medium') if st.session_state.fins else 'medium'
+conf_color = '#3ecf8e' if confidence == 'high' else '#d29922' if confidence == 'medium' else '#f85149'
+conf_icon = '✓' if confidence == 'high' else '⚠' if confidence == 'medium' else '⚠'
+sv1, sv2, sv3 = st.columns([3, 2, 1])
+with sv1:
+    st.markdown(f'<div style="display:flex;align-items:center;gap:8px;padding:4px 0"><span style="color:{conf_color};font-size:0.75rem">{conf_icon}</span><span style="color:#8b95a8;font-size:0.78rem;font-family:Inter,sans-serif">Classified as <strong style="color:#c0c8d8">{sector_name}</strong></span><span style="color:#3d4655;font-size:0.65rem;font-family:Inter,sans-serif">({confidence} confidence)</span></div>', unsafe_allow_html=True)
+with sv2:
+    sector_opts = list(SECTOR_NAMES.keys())
+    cidx = sector_opts.index(sector) if sector in sector_opts else 0
+    new_sec = st.selectbox("Change sector", options=sector_opts, index=cidx,
+                            format_func=lambda x: SECTOR_NAMES.get(x, x),
+                            label_visibility="collapsed", key="sector_override")
+with sv3:
+    if st.button("Re-run", key="rerun_sector", use_container_width=True):
+        st.session_state.sector = new_sec
+        try:
+            run_valuation()
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error: {e}")
+if new_sec != sector:
+    st.markdown(f'<div style="color:#d29922;font-size:0.72rem;font-family:Inter,sans-serif;margin:-4px 0 4px">Sector changed to {SECTOR_NAMES.get(new_sec, new_sec)} — click <strong>Re-run</strong> to update valuation</div>', unsafe_allow_html=True)
 
 # ── Top metric cards ──
+price_sub = st.session_state.price_ts if st.session_state.price_ts else ""
 c1, c2, c3, c4, c5 = st.columns(5, gap="small")
 with c1:
     st.markdown(card("Fair Value", f"${fv:,.2f}", f"{upside:+.1f}%", "green" if upside >= 0 else "red", glow=True), unsafe_allow_html=True)
 with c2:
-    st.markdown(card("Market Price", f"${price:,.2f}", "", "white"), unsafe_allow_html=True)
+    st.markdown(card("Market Price", f"${price:,.2f}", price_sub, "white"), unsafe_allow_html=True)
 with c3:
     st.markdown(card("WACC", f"{r.get('wacc',0)*100:.2f}%", "", "white"), unsafe_allow_html=True)
 with c4:
@@ -1091,7 +1133,7 @@ with ft1:
 with ft3:
     if st.button("← New Analysis", key="new_analysis"):
         for k in ['fins', 'dcf_result', 'ticker', 'price', 'shares_mil', 'sector', 'beta',
-                   'company_name', 'filing_loaded', 'auto_loaded']:
+                   'company_name', 'filing_loaded', 'auto_loaded', 'filing_info', 'price_ts']:
             if k in st.session_state: del st.session_state[k]
         st.query_params.clear()
         st.rerun()
