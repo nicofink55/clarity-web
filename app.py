@@ -1132,7 +1132,7 @@ st.markdown('<div class="shimmer-line" style="margin-top:32px"></div>', unsafe_a
 # Share + New Analysis row
 ft1, ft2, ft3 = st.columns([1, 2, 1])
 with ft1:
-    share_url = f"https://clarity-web.streamlit.app/?ticker={ticker}"
+    share_url = f"https://clarval.com/?ticker={ticker}"
     import streamlit.components.v1 as components
     components.html(f'''
     <button id="share-btn" style="cursor:pointer;padding:8px 20px;background:rgba(62,207,142,0.08);border:1px solid rgba(62,207,142,0.15);border-radius:8px;color:#3ecf8e;font-family:Inter,sans-serif;font-size:0.8rem;font-weight:600;transition:all 0.3s;outline:none">🔗 Share {ticker}</button>
