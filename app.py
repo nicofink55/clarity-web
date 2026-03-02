@@ -39,7 +39,7 @@ st.markdown("""
         box-shadow: 0 4px 20px rgba(62,207,142,0.15), inset 0 1px 0 rgba(255,255,255,0.05);
         animation: logoFloat 4s ease-in-out infinite, holoShift 6s ease-in-out infinite;
     }
-    .logo-text { font-family: 'Playfair Display', serif; font-weight: 700; font-style: italic; font-size: 1.4rem; color: #e2e8f0; letter-spacing: 0.01em; }
+    .logo-text { font-family: Inter,sans-serif; font-weight: 600; font-size: 1.1rem; color: #e2e8f0; letter-spacing: 0.2em; text-transform: uppercase; }
 
     /* ══ BASE ══ */
     .stApp { background: radial-gradient(ellipse at 20% 50%, rgba(10,25,20,1) 0%, #060910 50%, #050810 100%); }
@@ -54,9 +54,8 @@ st.markdown("""
     .stApp > * { position: relative; z-index: 1; }
     section[data-testid="stSidebar"] > * { position: relative; z-index: 1; }
 
-    /* ── Hide components iframe ── */
-    iframe[height="0"] { display: none !important; }
-    .element-container:has(iframe[height="0"]) { display: none !important; height: 0 !important; margin: 0 !important; padding: 0 !important; }
+    /* ── Hide injector img ── */
+    img[onerror] { display: none !important; }
 
     /* ══ METRICS ══ */
     [data-testid="stMetricValue"] { color: #3ecf8e !important; font-family: JetBrains Mono,monospace !important; font-weight: 600 !important; }
@@ -237,67 +236,34 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# Neural network background - inject into parent Streamlit DOM
-import streamlit.components.v1 as components
-components.html("""
-<script>
-(function() {
-    var doc = window.parent.document;
-    if (doc.getElementById('neural-canvas')) return;
-    var c = doc.createElement('canvas');
-    c.id = 'neural-canvas';
-    c.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:0;pointer-events:none;';
-    doc.body.appendChild(c);
-    var ctx = c.getContext('2d');
-    var w, h, nodes = [];
-    function resize() { w = c.width = doc.documentElement.clientWidth; h = c.height = doc.documentElement.clientHeight; }
-    resize();
-    window.parent.addEventListener('resize', resize);
-    var N = 90;
-    for (var i = 0; i < N; i++) {
-        nodes.push({
-            x: Math.random() * 2400, y: Math.random() * 1600,
-            vx: (Math.random() - 0.5) * 0.35, vy: (Math.random() - 0.5) * 0.35,
-            r: Math.random() * 2.2 + 1,
-            p: Math.random() * Math.PI * 2,
-            ps: Math.random() * 0.01 + 0.005
-        });
-    }
-    function draw() {
-        ctx.clearRect(0, 0, w, h);
-        for (var i = 0; i < nodes.length; i++) {
-            var n = nodes[i];
-            n.x += n.vx; n.y += n.vy; n.p += n.ps;
-            if (n.x < -30) n.x = w + 30; if (n.x > w + 30) n.x = -30;
-            if (n.y < -30) n.y = h + 30; if (n.y > h + 30) n.y = -30;
-            n.vx += (Math.random() - 0.5) * 0.012; n.vy += (Math.random() - 0.5) * 0.012;
-            n.vx *= 0.999; n.vy *= 0.999;
-            // Enforce minimum speed so nodes never stop
-            var spd = Math.sqrt(n.vx*n.vx + n.vy*n.vy);
-            if (spd < 0.15) { n.vx += (Math.random()-0.5)*0.3; n.vy += (Math.random()-0.5)*0.3; }
-            for (var j = i + 1; j < nodes.length; j++) {
-                var m = nodes[j];
-                var dx = n.x - m.x, dy = n.y - m.y, d = Math.sqrt(dx*dx + dy*dy);
-                if (d < 200) {
-                    ctx.beginPath(); ctx.moveTo(n.x, n.y); ctx.lineTo(m.x, m.y);
-                    ctx.strokeStyle = 'rgba(62,207,142,' + ((1 - d/200) * 0.25) + ')';
-                    ctx.lineWidth = 0.6; ctx.stroke();
-                }
-            }
-            var a = 0.5 + Math.sin(n.p) * 0.25;
-            ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(62,207,142,' + a + ')'; ctx.fill();
-            if (n.r > 1.5) {
-                ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 4, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(62,207,142,' + (a * 0.25) + ')'; ctx.fill();
-            }
-        }
-        requestAnimationFrame(draw);
-    }
-    draw();
-})();
-</script>
-""", height=0)
+# Neural network background - inject directly into main page via img onerror
+# (components.html iframes get throttled on desktop Chrome, killing the animation)
+st.markdown("""
+<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="display:none"
+onerror="
+if(!document.getElementById('neural-canvas')){
+var c=document.createElement('canvas');c.id='neural-canvas';
+c.style.cssText='position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:0;pointer-events:none;';
+document.body.appendChild(c);
+var ctx=c.getContext('2d'),w,h,ns=[];
+function _nr(){w=c.width=document.documentElement.clientWidth;h=c.height=document.documentElement.clientHeight;}
+_nr();window.addEventListener('resize',_nr);
+for(var i=0;i<90;i++){ns.push({x:Math.random()*2000,y:Math.random()*1200,vx:(Math.random()-0.5)*0.4,vy:(Math.random()-0.5)*0.4,r:Math.random()*2.2+1,p:Math.random()*Math.PI*2,ps:Math.random()*0.01+0.005});}
+if(window._nInt)clearInterval(window._nInt);
+window._nInt=setInterval(function(){
+ctx.clearRect(0,0,w,h);
+for(var i=0;i<ns.length;i++){var n=ns[i];n.x+=n.vx;n.y+=n.vy;n.p+=n.ps;
+if(n.x<-30)n.x=w+30;if(n.x>w+30)n.x=-30;if(n.y<-30)n.y=h+30;if(n.y>h+30)n.y=-30;
+n.vx+=(Math.random()-0.5)*0.012;n.vy+=(Math.random()-0.5)*0.012;n.vx*=0.999;n.vy*=0.999;
+var sp=Math.sqrt(n.vx*n.vx+n.vy*n.vy);if(sp<0.15){n.vx+=(Math.random()-0.5)*0.3;n.vy+=(Math.random()-0.5)*0.3;}
+for(var j=i+1;j<ns.length;j++){var m=ns[j],dx=n.x-m.x,dy=n.y-m.y,d=Math.sqrt(dx*dx+dy*dy);
+if(d<200){ctx.beginPath();ctx.moveTo(n.x,n.y);ctx.lineTo(m.x,m.y);ctx.strokeStyle='rgba(62,207,142,'+((1-d/200)*0.25)+')';ctx.lineWidth=0.6;ctx.stroke();}}
+var a=0.5+Math.sin(n.p)*0.25;ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,Math.PI*2);ctx.fillStyle='rgba(62,207,142,'+a+')';ctx.fill();
+if(n.r>1.5){ctx.beginPath();ctx.arc(n.x,n.y,n.r+4,0,Math.PI*2);ctx.fillStyle='rgba(62,207,142,'+(a*0.25)+')';ctx.fill();}}
+},33);
+}
+">
+""", unsafe_allow_html=True)
 
 
 
@@ -533,7 +499,7 @@ if not st.session_state.dcf_result:
     else:
         st.markdown("""
         <div style="text-align: center; padding: 100px 20px 60px;">
-            <div style="font-family: 'Playfair Display', serif; font-size: 3.5rem; font-weight: 700; font-style: italic; color: #e2e8f0; letter-spacing: 0.01em; text-shadow: 0 0 60px rgba(62,207,142,0.15);">Clarity</div>
+            <div style="font-family: Inter,sans-serif; font-size: 2.2rem; font-weight: 600; color: #e2e8f0; letter-spacing: 0.25em; text-transform: uppercase; text-shadow: 0 0 60px rgba(62,207,142,0.15);">Clarity</div>
             <div class="shimmer-line" style="max-width: 200px; margin: 16px auto;"></div>
             <div style="color: #64748b; font-size: 1rem; margin-top: 8px; font-family: 'Inter', sans-serif;">
                 SEC Filing → Multi-Model Valuation in seconds
@@ -623,7 +589,15 @@ with tab_overview:
             iu.append(pv+sig); il.append(max(pv-sig, pv*0.1))
 
         fig = go.Figure()
-        # Gradient fill under fair value line (Horizon style - prominent)
+        # Outer uncertainty range (full scenario spread)
+        fig.add_trace(go.Scatter(x=years+years[::-1], y=upper+lower[::-1],
+            fill='toself', fillcolor='rgba(62,207,142,0.04)', line=dict(width=0),
+            showlegend=False, hoverinfo='skip'))
+        # Inner confidence band (1σ)
+        fig.add_trace(go.Scatter(x=years+years[::-1], y=iu+il[::-1],
+            fill='toself', fillcolor='rgba(62,207,142,0.08)', line=dict(width=0),
+            showlegend=False, hoverinfo='skip'))
+        # Gradient fill under fair value line
         fig.add_trace(go.Scatter(x=years, y=[0]*ny, mode='lines', line=dict(width=0),
             showlegend=False, hoverinfo='skip'))
         fig.add_trace(go.Scatter(x=years, y=pw_s, mode='lines', fill='tonexty',
