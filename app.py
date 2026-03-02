@@ -18,7 +18,9 @@ from engine import (
     SECTOR_NAMES, SCENARIOS, BETAS,
 )
 
-st.set_page_config(page_title="Clarity — Equity Valuation Engine", page_icon="📊", layout="wide", initial_sidebar_state="collapsed")
+from PIL import Image as _PILImage
+_favicon = _PILImage.open(os.path.join(os.path.dirname(__file__), "favicon.png"))
+st.set_page_config(page_title="Clarity — Equity Valuation Engine", page_icon=_favicon, layout="wide", initial_sidebar_state="collapsed")
 
 # ════════════════════════════════════════
 #  THEME & CSS
