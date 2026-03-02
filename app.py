@@ -34,14 +34,9 @@ st.markdown("""
     #MainMenu, footer { visibility: hidden; }
     .block-container { padding-top: 2.5rem !important; }
 
-    /* ── Neural network iframe as background ── */
-    iframe[height="800"] {
-        position: fixed !important; top: 0 !important; left: 0 !important;
-        width: 100vw !important; height: 100vh !important;
-        z-index: 0 !important; pointer-events: none !important;
-        border: none !important; opacity: 0.7;
-    }
-    .stApp > header, .block-container, .stTabs, section[data-testid="stSidebar"] { position: relative; z-index: 1; }
+    /* ── Neural network z-index layering ── */
+    .stApp > * { position: relative; z-index: 1; }
+    section[data-testid="stSidebar"] > * { position: relative; z-index: 1; }
 
     /* ── Metrics ── */
     [data-testid="stMetricValue"] { color: #3ecf8e !important; font-family: 'JetBrains Mono', monospace !important; font-weight: 600 !important; }
@@ -199,6 +194,10 @@ st.markdown("""
     /* ── Alert boxes ── */
     .stAlert { border-radius: 8px; backdrop-filter: blur(4px); }
 
+    /* Hide the components iframe container */
+    iframe[height="0"] { display: none !important; }
+    .element-container:has(iframe[height="0"]) { display: none !important; height: 0 !important; margin: 0 !important; padding: 0 !important; }
+
     /* ── Scrollbar ── */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: #060910; }
@@ -207,75 +206,65 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Neural network background
+# Neural network background - inject into parent Streamlit DOM
 import streamlit.components.v1 as components
 components.html("""
-<style>
-    body { margin: 0; overflow: hidden; background: transparent; }
-    canvas { display: block; }
-</style>
-<canvas id="nn"></canvas>
 <script>
 (function() {
-    const c = document.getElementById('nn');
-    const ctx = c.getContext('2d');
-    let w, h, nodes = [];
-
-    function resize() {
-        w = c.width = window.innerWidth;
-        h = c.height = window.innerHeight;
-    }
+    var doc = window.parent.document;
+    if (doc.getElementById('neural-canvas')) return;
+    var c = doc.createElement('canvas');
+    c.id = 'neural-canvas';
+    c.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:0;pointer-events:none;';
+    doc.body.appendChild(c);
+    var ctx = c.getContext('2d');
+    var w, h, nodes = [];
+    function resize() { w = c.width = doc.documentElement.clientWidth; h = c.height = doc.documentElement.clientHeight; }
     resize();
-    window.addEventListener('resize', resize);
-
-    const N = Math.min(60, Math.floor(window.innerWidth / 25));
-    for (let i = 0; i < N; i++) {
+    window.parent.addEventListener('resize', resize);
+    var N = 90;
+    for (var i = 0; i < N; i++) {
         nodes.push({
-            x: Math.random() * 2000, y: Math.random() * 2000,
-            vx: (Math.random() - 0.5) * 0.2, vy: (Math.random() - 0.5) * 0.2,
-            r: Math.random() * 1.5 + 0.5,
+            x: Math.random() * 2400, y: Math.random() * 1600,
+            vx: (Math.random() - 0.5) * 0.35, vy: (Math.random() - 0.5) * 0.35,
+            r: Math.random() * 2 + 0.8,
             p: Math.random() * Math.PI * 2,
-            ps: Math.random() * 0.008 + 0.003
+            ps: Math.random() * 0.01 + 0.005
         });
     }
-
     function draw() {
         ctx.clearRect(0, 0, w, h);
-        for (let i = 0; i < nodes.length; i++) {
-            const n = nodes[i];
+        for (var i = 0; i < nodes.length; i++) {
+            var n = nodes[i];
             n.x += n.vx; n.y += n.vy; n.p += n.ps;
-            if (n.x < -20) n.x = w + 20;
-            if (n.x > w + 20) n.x = -20;
-            if (n.y < -20) n.y = h + 20;
-            if (n.y > h + 20) n.y = -20;
-            n.vx *= 0.9995; n.vy *= 0.9995;
-            n.vx += (Math.random() - 0.5) * 0.005;
-            n.vy += (Math.random() - 0.5) * 0.005;
-            for (let j = i + 1; j < nodes.length; j++) {
-                const m = nodes[j];
-                const dx = n.x - m.x, dy = n.y - m.y;
-                const d = Math.sqrt(dx * dx + dy * dy);
-                if (d < 140) {
-                    ctx.beginPath();
-                    ctx.moveTo(n.x, n.y);
-                    ctx.lineTo(m.x, m.y);
-                    ctx.strokeStyle = 'rgba(62,207,142,' + ((1 - d / 140) * 0.08) + ')';
-                    ctx.lineWidth = 0.5;
-                    ctx.stroke();
+            if (n.x < -30) n.x = w + 30; if (n.x > w + 30) n.x = -30;
+            if (n.y < -30) n.y = h + 30; if (n.y > h + 30) n.y = -30;
+            n.vx += (Math.random() - 0.5) * 0.008; n.vy += (Math.random() - 0.5) * 0.008;
+            n.vx *= 0.998; n.vy *= 0.998;
+            for (var j = i + 1; j < nodes.length; j++) {
+                var m = nodes[j];
+                var dx = n.x - m.x, dy = n.y - m.y, d = Math.sqrt(dx*dx + dy*dy);
+                if (d < 180) {
+                    ctx.beginPath(); ctx.moveTo(n.x, n.y); ctx.lineTo(m.x, m.y);
+                    ctx.strokeStyle = 'rgba(62,207,142,' + ((1 - d/180) * 0.18) + ')';
+                    ctx.lineWidth = 0.6; ctx.stroke();
                 }
             }
-            const a = 0.2 + Math.sin(n.p) * 0.1;
-            ctx.beginPath();
-            ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(62,207,142,' + a + ')';
-            ctx.fill();
+            var a = 0.35 + Math.sin(n.p) * 0.2;
+            ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(62,207,142,' + a + ')'; ctx.fill();
+            if (n.r > 1.5) {
+                ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 4, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(62,207,142,' + (a * 0.15) + ')'; ctx.fill();
+            }
         }
         requestAnimationFrame(draw);
     }
     draw();
 })();
 </script>
-""", height=800)
+""", height=0)
+
 
 
 # ════════════════════════════════════════
