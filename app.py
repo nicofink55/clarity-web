@@ -1129,7 +1129,20 @@ st.markdown('<div class="shimmer-line" style="margin-top:32px"></div>', unsafe_a
 ft1, ft2, ft3 = st.columns([1, 2, 1])
 with ft1:
     share_url = f"https://clarity-web.streamlit.app/?ticker={ticker}"
-    st.markdown(f'''<button onclick="navigator.clipboard.writeText('{share_url}').then(()=>{{this.innerText='✓ Copied!';setTimeout(()=>this.innerText='🔗 Share {ticker}',2000)}})" style="cursor:pointer;padding:8px 20px;background:rgba(62,207,142,0.08);border:1px solid rgba(62,207,142,0.15);border-radius:8px;color:#3ecf8e;font-family:Inter,sans-serif;font-size:0.8rem;font-weight:600;transition:all 0.3s">🔗 Share {ticker}</button>''', unsafe_allow_html=True)
+    import streamlit.components.v1 as components
+    components.html(f'''
+    <button id="share-btn" style="cursor:pointer;padding:8px 20px;background:rgba(62,207,142,0.08);border:1px solid rgba(62,207,142,0.15);border-radius:8px;color:#3ecf8e;font-family:Inter,sans-serif;font-size:0.8rem;font-weight:600;transition:all 0.3s;outline:none">🔗 Share {ticker}</button>
+    <script>
+    document.getElementById('share-btn').addEventListener('click', function() {{
+        var btn = this;
+        navigator.clipboard.writeText('{share_url}').then(function() {{
+            btn.innerText = '✓ Copied!';
+            btn.style.borderColor = 'rgba(62,207,142,0.4)';
+            setTimeout(function() {{ btn.innerText = '🔗 Share {ticker}'; btn.style.borderColor = 'rgba(62,207,142,0.15)'; }}, 2000);
+        }});
+    }});
+    </script>
+    ''', height=45)
 with ft3:
     if st.button("← New Analysis", key="new_analysis"):
         for k in ['fins', 'dcf_result', 'ticker', 'price', 'shares_mil', 'sector', 'beta',
