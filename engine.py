@@ -28,6 +28,37 @@ except ImportError:
 
 
 # ════════════════════════════════════════════════════════
+#  FRED: Live 10-Year Treasury (Risk-Free Rate)
+# ════════════════════════════════════════════════════════
+
+_rf_cache = {'rate': None, 'ts': 0}
+
+def fetch_risk_free_rate(fallback=0.035):
+    """Fetch the latest 10-Year Treasury yield from FRED.
+    Uses the public CSV endpoint (no API key needed).
+    Caches for 6 hours to avoid hammering FRED."""
+    if _rf_cache['rate'] and (time.time() - _rf_cache['ts']) < 21600:  # 6hr cache
+        return _rf_cache['rate']
+    try:
+        url = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10&cosd=2024-01-01"
+        req = Request(url, headers={'User-Agent': 'Clarity/1.0'})
+        raw = urlopen(req, timeout=8).read().decode('utf-8')
+        # CSV: DATE,DGS10 — last non-empty row is most recent
+        lines = [l.strip() for l in raw.strip().split('\n') if l.strip() and not l.startswith('DATE')]
+        for line in reversed(lines):
+            parts = line.split(',')
+            if len(parts) == 2 and parts[1] not in ('.', ''):
+                rate = float(parts[1]) / 100.0  # Convert from percentage
+                if 0.005 < rate < 0.15:  # Sanity check: 0.5% to 15%
+                    _rf_cache['rate'] = rate
+                    _rf_cache['ts'] = time.time()
+                    return rate
+    except Exception:
+        pass
+    return _rf_cache['rate'] if _rf_cache['rate'] else fallback
+
+
+# ════════════════════════════════════════════════════════
 #  SEC EDGAR DOWNLOADER ENGINE
 # ════════════════════════════════════════════════════════
 
@@ -1832,9 +1863,9 @@ SCENARIOS = {
 
 def calc_wacc(sector, beta=None, dr=0.0):
     b = beta if beta else BETAS.get(sector, 1.0)
-    # Risk-free: through-cycle normalized 10yr treasury (~3.5%)
+    # Risk-free: live 10yr Treasury from FRED (falls back to 3.5%)
     # ERP: Damodaran implied ERP (~4.6% as of early 2025)
-    rf = 0.035
+    rf = fetch_risk_free_rate(fallback=0.035)
     erp = 0.046
     coe = rf + b * erp
     if sector in ('bank','insurance'): return coe

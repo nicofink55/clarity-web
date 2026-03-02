@@ -12,6 +12,7 @@ from engine import (
     fetch_market_data,
     parse_html, parse_pdf, HAS_BS4, HAS_PDF,
     fetch_live_comps, PEER_GROUPS,
+    fetch_risk_free_rate,
     run_dcf, run_full_valuation,
     detect_sector, infer_ticker, fmt,
     SECTOR_NAMES, SCENARIOS, BETAS,
@@ -732,7 +733,8 @@ with c1:
 with c2:
     st.markdown(card("Market Price", f"${price:,.2f}", price_sub, "white"), unsafe_allow_html=True)
 with c3:
-    st.markdown(card("WACC", f"{r.get('wacc',0)*100:.2f}%", "", "white"), unsafe_allow_html=True)
+    rf_live = fetch_risk_free_rate()
+    st.markdown(card("WACC", f"{r.get('wacc',0)*100:.2f}%", f"Rf {rf_live*100:.2f}%", "white"), unsafe_allow_html=True)
 with c4:
     prob = mc.get('prob_above_price', 0) if mc else 0
     prob_style = "green" if prob >= 60 else "amber" if prob >= 40 else "red"
