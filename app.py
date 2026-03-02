@@ -32,7 +32,7 @@ st.markdown("""
     h1, h2, h3 { color: #e2e8f0 !important; font-family: 'Inter', sans-serif !important; }
     .stMarkdown p, .stMarkdown li { color: #94a3b8; font-family: 'Inter', sans-serif; }
     #MainMenu, footer { visibility: hidden; }
-    .block-container { padding-top: 1.5rem !important; }
+    .block-container { padding-top: 2.5rem !important; }
 
     /* ── Neural network canvas ── */
     #neural-bg { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
@@ -138,15 +138,23 @@ st.markdown("""
     .verdict-badge {
         display: inline-block; padding: 8px 20px; border-radius: 8px;
         font-family: 'JetBrains Mono', monospace; font-weight: 800; font-size: 1.1rem;
-        letter-spacing: 0.06em; animation: verdictPulse 3s ease-in-out infinite;
+        letter-spacing: 0.06em;
     }
-    .verdict-badge.buy { background: rgba(62,207,142,0.12); color: #3ecf8e; border: 1px solid rgba(62,207,142,0.3); text-shadow: 0 0 20px rgba(62,207,142,0.4); }
-    .verdict-badge.sell { background: rgba(248,81,73,0.12); color: #f85149; border: 1px solid rgba(248,81,73,0.3); text-shadow: 0 0 20px rgba(248,81,73,0.4); }
-    .verdict-badge.hold { background: rgba(210,153,34,0.12); color: #d29922; border: 1px solid rgba(210,153,34,0.3); text-shadow: 0 0 20px rgba(210,153,34,0.4); }
+    .verdict-badge.buy { background: rgba(62,207,142,0.12); color: #3ecf8e; border: 1px solid rgba(62,207,142,0.3); text-shadow: 0 0 20px rgba(62,207,142,0.4); animation: buyPulse 3s ease-in-out infinite; }
+    .verdict-badge.sell { background: rgba(248,81,73,0.12); color: #f85149; border: 1px solid rgba(248,81,73,0.3); text-shadow: 0 0 20px rgba(248,81,73,0.4); animation: sellPulse 3s ease-in-out infinite; }
+    .verdict-badge.hold { background: rgba(210,153,34,0.12); color: #d29922; border: 1px solid rgba(210,153,34,0.3); text-shadow: 0 0 20px rgba(210,153,34,0.4); animation: holdPulse 3s ease-in-out infinite; }
 
-    @keyframes verdictPulse {
+    @keyframes buyPulse {
         0%, 100% { box-shadow: 0 0 8px rgba(62,207,142,0.1); }
-        50% { box-shadow: 0 0 24px rgba(62,207,142,0.2); }
+        50% { box-shadow: 0 0 24px rgba(62,207,142,0.25); }
+    }
+    @keyframes sellPulse {
+        0%, 100% { box-shadow: 0 0 8px rgba(248,81,73,0.1); }
+        50% { box-shadow: 0 0 24px rgba(248,81,73,0.25); }
+    }
+    @keyframes holdPulse {
+        0%, 100% { box-shadow: 0 0 8px rgba(210,153,34,0.1); }
+        50% { box-shadow: 0 0 24px rgba(210,153,34,0.25); }
     }
 
     /* ── Glow animation for fair value ── */
@@ -183,78 +191,58 @@ st.markdown("""
     ::-webkit-scrollbar-thumb { background: rgba(62,207,142,0.15); border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: rgba(62,207,142,0.3); }
 </style>
+""", unsafe_allow_html=True)
 
-<!-- Neural Network Background -->
-<canvas id="neural-bg"></canvas>
+# Neural network background via components.html (Streamlit strips <script> from st.markdown)
+import streamlit.components.v1 as components
+components.html("""
+<canvas id="neural-bg" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;"></canvas>
 <script>
 (function() {
-    const canvas = document.getElementById('neural-bg');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const c = document.getElementById('neural-bg');
+    if (!c) return;
+    const ctx = c.getContext('2d');
     let w, h, nodes = [], mouse = {x: -1000, y: -1000};
-
-    function resize() {
-        w = canvas.width = window.innerWidth;
-        h = canvas.height = window.innerHeight;
-    }
+    function resize() { w = c.width = window.innerWidth; h = c.height = window.innerHeight; }
     resize();
     window.addEventListener('resize', resize);
-
-    document.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
-
-    const NODE_COUNT = Math.min(80, Math.floor(window.innerWidth * window.innerHeight / 18000));
-    for (let i = 0; i < NODE_COUNT; i++) {
+    window.parent.document.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+    const N = Math.min(70, Math.floor(window.innerWidth * window.innerHeight / 20000));
+    for (let i = 0; i < N; i++) {
         nodes.push({
             x: Math.random() * w, y: Math.random() * h,
-            vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3,
+            vx: (Math.random() - 0.5) * 0.25, vy: (Math.random() - 0.5) * 0.25,
             r: Math.random() * 1.5 + 0.5,
             pulse: Math.random() * Math.PI * 2,
-            pulseSpeed: Math.random() * 0.01 + 0.005
+            ps: Math.random() * 0.008 + 0.004
         });
     }
-
     function draw() {
         ctx.clearRect(0, 0, w, h);
         for (let i = 0; i < nodes.length; i++) {
             const n = nodes[i];
-            n.x += n.vx; n.y += n.vy;
-            n.pulse += n.pulseSpeed;
-            if (n.x < -50) n.x = w + 50;
-            if (n.x > w + 50) n.x = -50;
-            if (n.y < -50) n.y = h + 50;
-            if (n.y > h + 50) n.y = -50;
+            n.x += n.vx; n.y += n.vy; n.pulse += n.ps;
+            if (n.x < -50) n.x = w + 50; if (n.x > w + 50) n.x = -50;
+            if (n.y < -50) n.y = h + 50; if (n.y > h + 50) n.y = -50;
             const mdx = n.x - mouse.x, mdy = n.y - mouse.y;
-            const mdist = Math.sqrt(mdx * mdx + mdy * mdy);
-            if (mdist < 150) {
-                n.vx += (mdx / mdist) * 0.02;
-                n.vy += (mdy / mdist) * 0.02;
-            }
+            const md = Math.sqrt(mdx*mdx + mdy*mdy);
+            if (md < 150) { n.vx += (mdx/md)*0.015; n.vy += (mdy/md)*0.015; }
             n.vx *= 0.999; n.vy *= 0.999;
-            const pulseAlpha = 0.3 + Math.sin(n.pulse) * 0.15;
-            for (let j = i + 1; j < nodes.length; j++) {
+            for (let j = i+1; j < nodes.length; j++) {
                 const m = nodes[j];
-                const dx = n.x - m.x, dy = n.y - m.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < 160) {
-                    const alpha = (1 - dist / 160) * 0.12;
-                    ctx.beginPath();
-                    ctx.moveTo(n.x, n.y);
-                    ctx.lineTo(m.x, m.y);
-                    ctx.strokeStyle = 'rgba(62, 207, 142, ' + alpha + ')';
-                    ctx.lineWidth = 0.5;
-                    ctx.stroke();
+                const dx = n.x-m.x, dy = n.y-m.y, d = Math.sqrt(dx*dx+dy*dy);
+                if (d < 150) {
+                    ctx.beginPath(); ctx.moveTo(n.x,n.y); ctx.lineTo(m.x,m.y);
+                    ctx.strokeStyle = 'rgba(62,207,142,' + ((1-d/150)*0.1) + ')';
+                    ctx.lineWidth = 0.5; ctx.stroke();
                 }
             }
-            ctx.beginPath();
-            ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(62, 207, 142, ' + pulseAlpha + ')';
-            ctx.fill();
-            if (mdist < 200) {
-                const glowAlpha = (1 - mdist / 200) * 0.25;
-                ctx.beginPath();
-                ctx.arc(n.x, n.y, n.r + 4, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(62, 207, 142, ' + glowAlpha + ')';
-                ctx.fill();
+            const a = 0.25 + Math.sin(n.pulse)*0.12;
+            ctx.beginPath(); ctx.arc(n.x,n.y,n.r,0,Math.PI*2);
+            ctx.fillStyle = 'rgba(62,207,142,' + a + ')'; ctx.fill();
+            if (md < 180) {
+                ctx.beginPath(); ctx.arc(n.x,n.y,n.r+3,0,Math.PI*2);
+                ctx.fillStyle = 'rgba(62,207,142,' + ((1-md/180)*0.2) + ')'; ctx.fill();
             }
         }
         requestAnimationFrame(draw);
@@ -262,7 +250,7 @@ st.markdown("""
     draw();
 })();
 </script>
-""", unsafe_allow_html=True)
+""", height=0)
 
 
 # ════════════════════════════════════════
@@ -536,8 +524,8 @@ ticker = st.session_state.ticker or "—"
 company = st.session_state.company_name or ""
 
 # ── Header ──
-display_name = company if company and company != ticker else ticker
-st.markdown(f'<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:4px"><span style="font-family:JetBrains Mono,monospace;font-size:1.8rem;font-weight:800;color:#e2e8f0">{ticker}</span><span style="color:#64748b;font-size:1rem;font-family:Inter,sans-serif">{display_name}</span></div>', unsafe_allow_html=True)
+display_name = company if company and company.upper() != ticker else ""
+st.markdown(f'<div style="display:flex;align-items:baseline;gap:14px;margin-bottom:8px;padding-top:4px"><span style="font-family:JetBrains Mono,monospace;font-size:2rem;font-weight:800;color:#e2e8f0;letter-spacing:-0.02em">{ticker}</span>{f"""<span style="color:#4b5563;font-size:0.95rem;font-family:Inter,sans-serif;font-weight:400">{display_name}</span>""" if display_name else ""}</div>', unsafe_allow_html=True)
 
 # ── Top metric cards ──
 cols = st.columns(5)
@@ -584,35 +572,53 @@ with tab_overview:
             iu.append(pv+sig); il.append(max(pv-sig, pv*0.1))
 
         fig = go.Figure()
-        # Outer cone
-        fig.add_trace(go.Scatter(x=years+years[::-1], y=upper+lower[::-1], fill='toself', fillcolor='rgba(62,207,142,0.06)', line=dict(width=0), showlegend=False, hoverinfo='skip'))
-        # Inner cone
-        fig.add_trace(go.Scatter(x=years+years[::-1], y=iu+il[::-1], fill='toself', fillcolor='rgba(62,207,142,0.12)', line=dict(width=0), showlegend=False, hoverinfo='skip'))
-        # Fair value line
+        # Outer uncertainty cone
+        fig.add_trace(go.Scatter(x=years+years[::-1], y=upper+lower[::-1],
+            fill='toself', fillcolor='rgba(62,207,142,0.04)', line=dict(width=0),
+            showlegend=False, hoverinfo='skip', name='_outer'))
+        # Inner cone (1σ)
+        fig.add_trace(go.Scatter(x=years+years[::-1], y=iu+il[::-1],
+            fill='toself', fillcolor='rgba(62,207,142,0.08)', line=dict(width=0),
+            showlegend=False, hoverinfo='skip', name='_inner'))
+        # Fill under fair value line
+        fig.add_trace(go.Scatter(x=years, y=[0]*ny, mode='lines', line=dict(width=0),
+            showlegend=False, hoverinfo='skip'))
+        fig.add_trace(go.Scatter(x=years, y=pw_s, mode='lines', fill='tonexty',
+            fillcolor='rgba(62,207,142,0.06)', line=dict(width=0),
+            showlegend=False, hoverinfo='skip'))
+        # Fair value line (main)
         fig.add_trace(go.Scatter(x=years, y=pw_s, mode='lines+markers', name='Fair Value',
-            line=dict(color='#3ecf8e', width=3), marker=dict(size=5, color='#3ecf8e', line=dict(width=1, color='#0b0e14')),
+            line=dict(color='#3ecf8e', width=2.5, shape='spline', smoothing=1.1),
+            marker=dict(size=6, color='#3ecf8e', line=dict(width=2, color='#060910')),
             hovertemplate='Year %{x}: $%{y:,.2f}<extra></extra>'))
-        # Market price
+        # Market price reference
         if mkt_price > 0:
-            fig.add_hline(y=mkt_price, line_dash="dot", line_color="rgba(248,81,73,0.6)", line_width=2,
-                          annotation_text=f"Market ${mkt_price:,.0f}", annotation_font=dict(color="#f85149", size=11, family="JetBrains Mono"))
-        # Scenario paths
+            fig.add_hline(y=mkt_price, line_dash="dot", line_color="rgba(248,81,73,0.5)", line_width=1.5,
+                          annotation_text=f"Market ${mkt_price:,.0f}",
+                          annotation_font=dict(color="#f85149", size=10, family="JetBrains Mono"),
+                          annotation_position="bottom right")
+        # Scenario paths (hidden by default — click legend to show)
         sc_colors = ['#22c55e','#3b82f6','#94a3b8','#f59e0b','#ef4444']
         for i, (sc, sp) in enumerate(zip(pp['scenarios'], scen_s)):
             fig.add_trace(go.Scatter(x=years, y=sp, mode='lines', name=sc.get('name',''),
-                line=dict(color=sc_colors[i%5], width=1.5, dash='dot'), opacity=0.4,
+                line=dict(color=sc_colors[i%5], width=1, dash='dot'), opacity=0.5,
+                visible='legendonly',
                 hovertemplate=f"{sc.get('name','')}: $%{{y:,.2f}}<extra></extra>"))
 
         fig.update_layout(
             plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-            xaxis=dict(title="Year", gridcolor='rgba(30,37,54,0.5)', color='#64748b', dtick=1, zeroline=False,
-                       tickfont=dict(family='JetBrains Mono', size=11)),
-            yaxis=dict(title="", gridcolor='rgba(30,37,54,0.5)', color='#64748b', tickformat='$,.0f', zeroline=False,
-                       tickfont=dict(family='JetBrains Mono', size=11)),
-            legend=dict(font=dict(color='#94a3b8', size=11, family='Inter'), bgcolor='rgba(0,0,0,0)',
-                       orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0),
-            margin=dict(l=50, r=20, t=10, b=40), height=400, hovermode='x unified',
-            hoverlabel=dict(bgcolor='#141825', bordercolor='#1e2536', font=dict(family='JetBrains Mono', size=12)),
+            xaxis=dict(title=None, gridcolor='rgba(62,207,142,0.04)', color='#475569', dtick=1, zeroline=False,
+                       tickfont=dict(family='JetBrains Mono', size=10), showline=False,
+                       ticksuffix='  '),
+            yaxis=dict(title=None, gridcolor='rgba(62,207,142,0.04)', color='#475569', tickformat='$,.0f', zeroline=False,
+                       tickfont=dict(family='JetBrains Mono', size=10), showline=False,
+                       tickprefix='  '),
+            legend=dict(font=dict(color='#64748b', size=10, family='Inter'), bgcolor='rgba(0,0,0,0)',
+                       orientation='h', yanchor='bottom', y=1.02, xanchor='center', x=0.5,
+                       itemclick='toggle', itemdoubleclick='toggleothers'),
+            margin=dict(l=55, r=20, t=8, b=30), height=380, hovermode='x unified',
+            hoverlabel=dict(bgcolor='rgba(20,24,37,0.95)', bordercolor='rgba(62,207,142,0.2)',
+                           font=dict(family='JetBrains Mono', size=11, color='#e2e8f0')),
         )
         st.plotly_chart(fig, use_container_width=True)
 
