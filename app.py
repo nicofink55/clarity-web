@@ -17,7 +17,7 @@ from engine import (
     SECTOR_NAMES, SCENARIOS, BETAS,
 )
 
-st.set_page_config(page_title="Clarity", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Clarity — Equity Valuation Engine", page_icon="📊", layout="wide", initial_sidebar_state="collapsed")
 
 # ════════════════════════════════════════
 #  THEME & CSS
@@ -251,6 +251,21 @@ st.markdown("""
         .styled-table tbody td { padding: 8px 10px; font-size: 0.8rem; }
         .verdict-badge { padding: 6px 16px; font-size: 0.9rem; }
     }
+
+    /* ── Landing page overrides ── */
+    [data-testid="stForm"] { background: transparent !important; border: none !important; padding: 0 !important; }
+    [data-testid="stForm"] .stTextInput input {
+        background: rgba(14,20,32,0.8) !important; color: #e2e8f0 !important;
+        border: 1px solid rgba(62,207,142,0.12) !important; border-radius: 12px !important;
+        font-family: Inter,sans-serif !important; font-size: 0.95rem !important;
+        font-weight: 400 !important; padding: 14px 18px !important;
+        height: auto !important;
+    }
+    [data-testid="stForm"] .stTextInput input::placeholder { color: #3d4655 !important; }
+    [data-testid="stForm"] .stTextInput input:focus {
+        border-color: rgba(62,207,142,0.35) !important;
+        box-shadow: 0 0 24px rgba(62,207,142,0.08) !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -328,12 +343,54 @@ def color_val(val_str):
 for key, default in [('fins', None), ('dcf_result', None), ('ticker', ''), ('price', 0.0),
     ('shares_mil', 0.0), ('sector', 'general'), ('beta', None),
     ('data_quality', {'quarters_available': 1}), ('log_messages', []),
-    ('shares_source', ''), ('company_name', ''), ('filing_loaded', False)]:
+    ('shares_source', ''), ('company_name', ''), ('filing_loaded', False),
+    ('auto_loaded', False)]:
     if key not in st.session_state:
         st.session_state[key] = default
 
 def log(msg, level="info"):
     st.session_state.log_messages.append((time.strftime("%H:%M:%S"), msg, level))
+
+def quick_run(ticker_val, form="10-K"):
+    """Pull filing + market data + run valuation in one shot."""
+    st.session_state.ticker = ticker_val
+    st.session_state.dcf_result = None
+    cik, name = lookup_cik(ticker_val)
+    st.session_state.company_name = name
+    info = find_filing(cik, form)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path, size = download_filing(info, tmpdir)
+        if path.lower().endswith('.pdf'): st.session_state.fins = parse_pdf(path)
+        else: st.session_state.fins = parse_html(path)
+    st.session_state.sector = st.session_state.fins.get('_sector', 'general')
+    st.session_state.data_quality = {'quarters_available': 1}
+    st.session_state.filing_loaded = True
+    data = fetch_market_data(ticker_val)
+    st.session_state.price = data['price']
+    st.session_state.shares_mil = data['shares_mil']
+    st.session_state.company_name = data.get('name', ticker_val)
+    st.session_state.beta = data.get('beta')
+    try:
+        live_comps = fetch_live_comps(st.session_state.sector, log_fn=lambda m, t: log(m, t))
+        if live_comps: st.session_state.fins['_live_comps'] = live_comps
+    except: pass
+    result = run_full_valuation(st.session_state.fins, st.session_state.price,
+                                 st.session_state.shares_mil, st.session_state.sector,
+                                 beta=st.session_state.beta, data_quality=st.session_state.data_quality)
+    st.session_state.dcf_result = result
+
+# ── URL Query Params: ?ticker=NVDA ──
+qp = st.query_params
+if qp.get("ticker") and not st.session_state.auto_loaded and not st.session_state.dcf_result:
+    t = qp["ticker"].upper().strip()
+    if t:
+        st.session_state.auto_loaded = True
+        try:
+            with st.spinner(f"Loading {t}..."):
+                quick_run(t)
+            st.rerun()
+        except Exception as e:
+            st.error(f"Could not load {t}: {e}")
 
 def run_valuation():
     fins = st.session_state.fins
@@ -451,6 +508,8 @@ with st.sidebar:
             progress.empty()
             status.error(f"Error: {e}")
             log(f"Error: {e}\n{traceback.format_exc()}", "err")
+        if st.session_state.ticker:
+            st.query_params["ticker"] = st.session_state.ticker
         st.rerun()
 
     st.markdown('<hr style="margin: 16px 0; border-color: #1a1f2e">', unsafe_allow_html=True)
@@ -516,26 +575,87 @@ if not st.session_state.dcf_result:
     elif st.session_state.filing_loaded:
         st.info("Filing loaded. Click **Run Valuation** in the sidebar.")
     else:
+        # ── LANDING PAGE ──
         st.markdown("""
-        <div style="text-align: center; padding: 100px 20px 60px;">
-            <div style="font-family: Inter,sans-serif; font-size: 2.2rem; font-weight: 600; color: #e2e8f0; letter-spacing: 0.25em; text-transform: uppercase; text-shadow: 0 0 60px rgba(62,207,142,0.15);">Clarity</div>
-            <div class="shimmer-line" style="max-width: 200px; margin: 16px auto;"></div>
-            <div style="color: #64748b; font-size: 1rem; margin-top: 8px; font-family: 'Inter', sans-serif;">
-                SEC Filing → Multi-Model Valuation in seconds
+        <div style="text-align:center;padding:60px 20px 0">
+            <div style="display:inline-flex;align-items:center;gap:14px;margin-bottom:20px">
+                <div class="logo-icon" style="width:52px;height:52px;font-size:1.8rem;border-radius:14px">C</div>
+                <span class="logo-text" style="font-size:1.6rem">Clarity</span>
             </div>
-            <div style="display: flex; justify-content: center; gap: 10px; margin-top: 40px; flex-wrap: wrap;">
-                <span style="background: rgba(17,21,32,0.7); border: 1px solid rgba(62,207,142,0.1); border-radius: 20px; padding: 6px 16px; color: #4b5563; font-size: 0.75rem; font-family: Inter, sans-serif; backdrop-filter: blur(4px); transition: all 0.3s;">DCF</span>
-                <span style="background: rgba(17,21,32,0.7); border: 1px solid rgba(62,207,142,0.1); border-radius: 20px; padding: 6px 16px; color: #4b5563; font-size: 0.75rem; font-family: Inter, sans-serif; backdrop-filter: blur(4px);">Residual Income</span>
-                <span style="background: rgba(17,21,32,0.7); border: 1px solid rgba(62,207,142,0.1); border-radius: 20px; padding: 6px 16px; color: #4b5563; font-size: 0.75rem; font-family: Inter, sans-serif; backdrop-filter: blur(4px);">Comps</span>
-                <span style="background: rgba(17,21,32,0.7); border: 1px solid rgba(62,207,142,0.1); border-radius: 20px; padding: 6px 16px; color: #4b5563; font-size: 0.75rem; font-family: Inter, sans-serif; backdrop-filter: blur(4px);">ROIC Fade</span>
-                <span style="background: rgba(17,21,32,0.7); border: 1px solid rgba(62,207,142,0.1); border-radius: 20px; padding: 6px 16px; color: #4b5563; font-size: 0.75rem; font-family: Inter, sans-serif; backdrop-filter: blur(4px);">EV/Revenue</span>
-                <span style="background: rgba(17,21,32,0.7); border: 1px solid rgba(62,207,142,0.1); border-radius: 20px; padding: 6px 16px; color: #4b5563; font-size: 0.75rem; font-family: Inter, sans-serif; backdrop-filter: blur(4px);">DDM</span>
-                <span style="background: rgba(17,21,32,0.7); border: 1px solid rgba(62,207,142,0.1); border-radius: 20px; padding: 6px 16px; color: #4b5563; font-size: 0.75rem; font-family: Inter, sans-serif; backdrop-filter: blur(4px);">Monte Carlo</span>
+            <div class="shimmer-line" style="max-width:200px;margin:12px auto"></div>
+            <div style="color:#8b95a8;font-size:1.05rem;margin:8px 0 0;font-family:Inter,sans-serif;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.6">
+                Institutional-grade equity valuation from SEC filings.<br>
+                <span style="color:#5a6478">DCF · Residual Income · Comps · Monte Carlo — in seconds.</span>
             </div>
-            <div style="color: #334155; font-size: 0.8rem; margin-top: 50px; font-family: 'Inter', sans-serif;">
-                Enter a ticker in the sidebar to get started
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── Search bar ──
+        st.markdown('<div style="height:32px"></div>', unsafe_allow_html=True)
+        _, search_col, _ = st.columns([1, 2, 1])
+        with search_col:
+            with st.form("landing_search", clear_on_submit=False):
+                search_ticker = st.text_input("Search", placeholder="Enter any ticker — AAPL, NVDA, MSFT, SEZL...",
+                                               label_visibility="collapsed").upper().strip()
+                search_go = st.form_submit_button("Analyze", use_container_width=True, type="primary")
+
+        if search_go and search_ticker:
+            try:
+                with st.spinner(f"Analyzing {search_ticker}..."):
+                    quick_run(search_ticker)
+                st.query_params["ticker"] = search_ticker
+                st.session_state.auto_loaded = True
+                st.rerun()
+            except Exception as e:
+                st.error(f"Could not load {search_ticker}: {e}")
+
+        # ── Featured tickers ──
+        st.markdown('<div style="text-align:center;margin-top:28px;margin-bottom:8px;color:#3d4655;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.12em;font-family:Inter,sans-serif">Popular tickers</div>', unsafe_allow_html=True)
+        featured = ["AAPL", "NVDA", "MSFT", "GOOG", "AMZN", "META", "SEZL", "PLTR"]
+        feat_cols = st.columns(len(featured))
+        for i, t in enumerate(featured):
+            with feat_cols[i]:
+                if st.button(t, key=f"feat_{t}", use_container_width=True):
+                    try:
+                        with st.spinner(f"Loading {t}..."):
+                            quick_run(t)
+                        st.query_params["ticker"] = t
+                        st.session_state.auto_loaded = True
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+
+        # ── How it works ──
+        st.markdown("""
+        <div style="max-width:700px;margin:48px auto 0;text-align:center">
+            <div style="color:#3ecf8e;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.12em;font-family:Inter,sans-serif;margin-bottom:16px">How it works</div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+                <div class="section-card" style="text-align:center;padding:20px">
+                    <div style="font-size:1.4rem;margin-bottom:8px">📄</div>
+                    <div style="color:#e2e8f0;font-size:0.8rem;font-weight:600;font-family:Inter,sans-serif;margin-bottom:4px">Pull Filing</div>
+                    <div style="color:#5a6478;font-size:0.72rem;font-family:Inter,sans-serif;line-height:1.5">Live 10-K/10-Q from SEC EDGAR with auto-parsed financials</div>
+                </div>
+                <div class="section-card" style="text-align:center;padding:20px">
+                    <div style="font-size:1.4rem;margin-bottom:8px">🔬</div>
+                    <div style="color:#e2e8f0;font-size:0.8rem;font-weight:600;font-family:Inter,sans-serif;margin-bottom:4px">Multi-Model</div>
+                    <div style="color:#5a6478;font-size:0.72rem;font-family:Inter,sans-serif;line-height:1.5">DCF, Residual Income, Comps, ROIC Fade, DDM — triangulated</div>
+                </div>
+                <div class="section-card" style="text-align:center;padding:20px">
+                    <div style="font-size:1.4rem;margin-bottom:8px">🎯</div>
+                    <div style="color:#e2e8f0;font-size:0.8rem;font-weight:600;font-family:Inter,sans-serif;margin-bottom:4px">Fair Value</div>
+                    <div style="color:#5a6478;font-size:0.72rem;font-family:Inter,sans-serif;line-height:1.5">Blended valuation with Monte Carlo confidence intervals</div>
+                </div>
             </div>
-        </div>""", unsafe_allow_html=True)
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── Disclaimer ──
+        st.markdown("""
+        <div style="text-align:center;margin-top:60px;padding-bottom:30px;color:#2d3548;font-size:0.65rem;font-family:Inter,sans-serif;line-height:1.6">
+            Not financial advice. For educational and research purposes only.<br>
+            Valuations are model-driven estimates, not recommendations to buy or sell securities.
+        </div>
+        """, unsafe_allow_html=True)
     st.stop()
 
 
@@ -956,3 +1076,30 @@ with tab_context:
         st.markdown('<div style="background:rgba(210,153,34,0.06);border:1px solid rgba(210,153,34,0.15);border-radius:8px;padding:10px 14px;margin-top:8px;color:#fcd34d;font-size:0.85rem;font-family:Inter,sans-serif">Buyback Machine: negative equity with strong cash gen — debt penalty capped</div>', unsafe_allow_html=True)
     if r.get('sbc_haircut', 0) > 0:
         st.markdown(f'<div style="color:#475569;font-size:0.75rem;margin-top:8px;font-family:Inter,sans-serif">SBC Haircut: {fmt(r["sbc_haircut"])}</div>', unsafe_allow_html=True)
+
+# ════════════════════════════════════════
+#  FOOTER
+# ════════════════════════════════════════
+
+st.markdown('<div class="shimmer-line" style="margin-top:32px"></div>', unsafe_allow_html=True)
+
+# Share + New Analysis row
+ft1, ft2, ft3 = st.columns([1, 2, 1])
+with ft1:
+    share_url = f"https://clarity-web.streamlit.app/?ticker={ticker}"
+    st.markdown(f'<a href="{share_url}" target="_blank" style="display:inline-block;padding:8px 20px;background:rgba(62,207,142,0.08);border:1px solid rgba(62,207,142,0.15);border-radius:8px;color:#3ecf8e;font-family:Inter,sans-serif;font-size:0.8rem;font-weight:600;text-decoration:none;transition:all 0.3s">🔗 Share {ticker}</a>', unsafe_allow_html=True)
+with ft3:
+    if st.button("← New Analysis", key="new_analysis"):
+        for k in ['fins', 'dcf_result', 'ticker', 'price', 'shares_mil', 'sector', 'beta',
+                   'company_name', 'filing_loaded', 'auto_loaded']:
+            if k in st.session_state: del st.session_state[k]
+        st.query_params.clear()
+        st.rerun()
+
+st.markdown("""
+<div style="text-align:center;margin-top:24px;padding-bottom:32px;color:#2d3548;font-size:0.6rem;font-family:Inter,sans-serif;line-height:1.6">
+    Not financial advice. For educational and research purposes only.<br>
+    Valuations are model-driven estimates from SEC filings, not recommendations to buy or sell securities.<br>
+    <span style="color:#1e2536">Clarity Valuation Engine</span>
+</div>
+""", unsafe_allow_html=True)
