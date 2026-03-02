@@ -457,7 +457,7 @@ PEER_GROUPS = {
     'saas_tech':        ['CRM', 'NOW', 'ADBE', 'WDAY', 'SNOW', 'DDOG', 'ZS', 'PANW'],
     'pharma':           ['LLY', 'JNJ', 'ABBV', 'MRK', 'PFE', 'TMO', 'ABT', 'BMY'],
     'fintech':          ['PYPL', 'SQ', 'FISV', 'FIS', 'GPN', 'ADYEY', 'AFRM', 'SOFI'],
-    'payment_network':  ['MA', 'AXP', 'PYPL', 'GPN', 'FISV', 'FIS'],
+    'payment_network':  ['V', 'MA', 'AXP', 'PYPL', 'GPN', 'FISV', 'FIS'],
     'consumer':         ['PG', 'KO', 'PEP', 'COST', 'WMT', 'CL', 'MCD', 'NKE'],
     'industrial':       ['HON', 'CAT', 'DE', 'MMM', 'GE', 'EMR', 'ETN', 'ITW'],
     'ep':               ['XOM', 'CVX', 'COP', 'EOG', 'MPC', 'VLO', 'PSX', 'SLB'],
@@ -770,7 +770,14 @@ SECTOR_RULES = [
     (['subscription revenue','annual recurring revenue','saas','cloud-based platform',
       'software-as-a-service','recurring revenue','platform revenue',
       'monthly active user','net retention rate','subscription services',
-      'human capital management','enterprise resource planning'], 'saas_tech', 2),
+      'human capital management','enterprise resource planning',
+      'marketing platform','marketing automation','demand-side platform','data-driven marketing',
+      'programmatic advertising','omnichannel marketing','customer data platform','marketing cloud',
+      'adtech','ad tech','advertising platform','campaign management',
+      'revenue cycle management','healthcare software','claims management',
+      'workflow automation','cloud-based software','platform-as-a-service',
+      'net revenue retention','dollar-based net retention','arr','annual contract value',
+      'customer acquisition cost','lifetime value','land and expand'], 'saas_tech', 2),
     (['payment network','card network','network transaction','credential',
       'acceptance locations','acceptance network','scheme fee','scheme volume',
       'data processing revenue','service revenue','international transaction revenue',
@@ -809,8 +816,13 @@ def detect_sector(full_text):
             count = min(len(re.findall(re.escape(kw), ft, re.IGNORECASE)), 10)
             if count: hits += count
         if hits: scores[sector] = scores.get(sector, 0) + hits * weight
+    # Bank boost: only if genuinely a bank (not a payment network that mentions NII in passing)
     if 'net interest income' in ft and 'subscription' not in ft:
-        scores['bank'] = scores.get('bank', 0) + 50
+        is_payment = any(kw in ft for kw in ['payment network', 'card network', 'visa', 'mastercard',
+                                              'credential', 'acceptance network', 'scheme fee',
+                                              'four-party model', 'payment volume'])
+        if not is_payment:
+            scores['bank'] = scores.get('bank', 0) + 50
     best, best_score = 'general', 0
     for s, sc in scores.items():
         if sc > best_score: best, best_score = s, sc
