@@ -81,15 +81,16 @@ with st.sidebar:
     st.caption("Multi-Model Valuation Engine")
     st.divider()
     st.markdown("#### Pull Filing")
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        ticker_input = st.text_input("Ticker", value=st.session_state.ticker, placeholder="AAPL").upper().strip()
-    with col2:
-        form_type = st.selectbox("Form", ["10-Q", "10-K"])
-    filing_count = st.select_slider("Filings", options=[1, 2, 3, 4], value=1)
+    with st.form("pull_form"):
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            ticker_input = st.text_input("Ticker", value=st.session_state.ticker, placeholder="AAPL").upper().strip()
+        with col2:
+            form_type = st.selectbox("Form", ["10-Q", "10-K"])
+        filing_count = st.select_slider("Filings", options=[1, 2, 3, 4], value=1)
+        pull_submitted = st.form_submit_button("⏎  Pull from EDGAR", use_container_width=True, type="primary")
 
-    if st.button("⏎  Pull from EDGAR", use_container_width=True, type="primary"):
-        if ticker_input:
+    if pull_submitted and ticker_input:
             st.session_state.ticker = ticker_input
             st.session_state.dcf_result = None
             progress = st.empty()
