@@ -34,8 +34,14 @@ st.markdown("""
     #MainMenu, footer { visibility: hidden; }
     .block-container { padding-top: 2.5rem !important; }
 
-    /* ── Neural network canvas ── */
-    #neural-bg { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+    /* ── Neural network iframe as background ── */
+    iframe[height="800"] {
+        position: fixed !important; top: 0 !important; left: 0 !important;
+        width: 100vw !important; height: 100vh !important;
+        z-index: 0 !important; pointer-events: none !important;
+        border: none !important; opacity: 0.7;
+    }
+    .stApp > header, .block-container, .stTabs, section[data-testid="stSidebar"] { position: relative; z-index: 1; }
 
     /* ── Metrics ── */
     [data-testid="stMetricValue"] { color: #3ecf8e !important; font-family: 'JetBrains Mono', monospace !important; font-weight: 600 !important; }
@@ -101,6 +107,14 @@ st.markdown("""
     }
     .metric-card:hover { border-color: rgba(62,207,142,0.25); transform: translateY(-2px); box-shadow: 0 8px 32px rgba(62,207,142,0.08); }
     .metric-card:hover::before { opacity: 1; }
+    .metric-card.verdict-sell { border-color: rgba(248,81,73,0.2); }
+    .metric-card.verdict-sell:hover { border-color: rgba(248,81,73,0.4); box-shadow: 0 8px 32px rgba(248,81,73,0.1); }
+    .metric-card.verdict-sell::before { background: linear-gradient(90deg, transparent, rgba(248,81,73,0.3), transparent); }
+    .metric-card.verdict-buy { border-color: rgba(62,207,142,0.2); }
+    .metric-card.verdict-buy:hover { border-color: rgba(62,207,142,0.4); box-shadow: 0 8px 32px rgba(62,207,142,0.1); }
+    .metric-card.verdict-hold { border-color: rgba(210,153,34,0.2); }
+    .metric-card.verdict-hold:hover { border-color: rgba(210,153,34,0.4); box-shadow: 0 8px 32px rgba(210,153,34,0.1); }
+    .metric-card.verdict-hold::before { background: linear-gradient(90deg, transparent, rgba(210,153,34,0.3), transparent); }
     .metric-card .label { color: #64748b; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; font-family: 'Inter', sans-serif; margin-bottom: 6px; }
     .metric-card .value { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 1.7rem; }
     .metric-card .sub { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; margin-top: 4px; }
@@ -193,64 +207,75 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Neural network background via components.html (Streamlit strips <script> from st.markdown)
+# Neural network background
 import streamlit.components.v1 as components
 components.html("""
-<canvas id="neural-bg" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;"></canvas>
+<style>
+    body { margin: 0; overflow: hidden; background: transparent; }
+    canvas { display: block; }
+</style>
+<canvas id="nn"></canvas>
 <script>
 (function() {
-    const c = document.getElementById('neural-bg');
-    if (!c) return;
+    const c = document.getElementById('nn');
     const ctx = c.getContext('2d');
-    let w, h, nodes = [], mouse = {x: -1000, y: -1000};
-    function resize() { w = c.width = window.innerWidth; h = c.height = window.innerHeight; }
+    let w, h, nodes = [];
+
+    function resize() {
+        w = c.width = window.innerWidth;
+        h = c.height = window.innerHeight;
+    }
     resize();
     window.addEventListener('resize', resize);
-    window.parent.document.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
-    const N = Math.min(70, Math.floor(window.innerWidth * window.innerHeight / 20000));
+
+    const N = Math.min(60, Math.floor(window.innerWidth / 25));
     for (let i = 0; i < N; i++) {
         nodes.push({
-            x: Math.random() * w, y: Math.random() * h,
-            vx: (Math.random() - 0.5) * 0.25, vy: (Math.random() - 0.5) * 0.25,
+            x: Math.random() * 2000, y: Math.random() * 2000,
+            vx: (Math.random() - 0.5) * 0.2, vy: (Math.random() - 0.5) * 0.2,
             r: Math.random() * 1.5 + 0.5,
-            pulse: Math.random() * Math.PI * 2,
-            ps: Math.random() * 0.008 + 0.004
+            p: Math.random() * Math.PI * 2,
+            ps: Math.random() * 0.008 + 0.003
         });
     }
+
     function draw() {
         ctx.clearRect(0, 0, w, h);
         for (let i = 0; i < nodes.length; i++) {
             const n = nodes[i];
-            n.x += n.vx; n.y += n.vy; n.pulse += n.ps;
-            if (n.x < -50) n.x = w + 50; if (n.x > w + 50) n.x = -50;
-            if (n.y < -50) n.y = h + 50; if (n.y > h + 50) n.y = -50;
-            const mdx = n.x - mouse.x, mdy = n.y - mouse.y;
-            const md = Math.sqrt(mdx*mdx + mdy*mdy);
-            if (md < 150) { n.vx += (mdx/md)*0.015; n.vy += (mdy/md)*0.015; }
-            n.vx *= 0.999; n.vy *= 0.999;
-            for (let j = i+1; j < nodes.length; j++) {
+            n.x += n.vx; n.y += n.vy; n.p += n.ps;
+            if (n.x < -20) n.x = w + 20;
+            if (n.x > w + 20) n.x = -20;
+            if (n.y < -20) n.y = h + 20;
+            if (n.y > h + 20) n.y = -20;
+            n.vx *= 0.9995; n.vy *= 0.9995;
+            n.vx += (Math.random() - 0.5) * 0.005;
+            n.vy += (Math.random() - 0.5) * 0.005;
+            for (let j = i + 1; j < nodes.length; j++) {
                 const m = nodes[j];
-                const dx = n.x-m.x, dy = n.y-m.y, d = Math.sqrt(dx*dx+dy*dy);
-                if (d < 150) {
-                    ctx.beginPath(); ctx.moveTo(n.x,n.y); ctx.lineTo(m.x,m.y);
-                    ctx.strokeStyle = 'rgba(62,207,142,' + ((1-d/150)*0.1) + ')';
-                    ctx.lineWidth = 0.5; ctx.stroke();
+                const dx = n.x - m.x, dy = n.y - m.y;
+                const d = Math.sqrt(dx * dx + dy * dy);
+                if (d < 140) {
+                    ctx.beginPath();
+                    ctx.moveTo(n.x, n.y);
+                    ctx.lineTo(m.x, m.y);
+                    ctx.strokeStyle = 'rgba(62,207,142,' + ((1 - d / 140) * 0.08) + ')';
+                    ctx.lineWidth = 0.5;
+                    ctx.stroke();
                 }
             }
-            const a = 0.25 + Math.sin(n.pulse)*0.12;
-            ctx.beginPath(); ctx.arc(n.x,n.y,n.r,0,Math.PI*2);
-            ctx.fillStyle = 'rgba(62,207,142,' + a + ')'; ctx.fill();
-            if (md < 180) {
-                ctx.beginPath(); ctx.arc(n.x,n.y,n.r+3,0,Math.PI*2);
-                ctx.fillStyle = 'rgba(62,207,142,' + ((1-md/180)*0.2) + ')'; ctx.fill();
-            }
+            const a = 0.2 + Math.sin(n.p) * 0.1;
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(62,207,142,' + a + ')';
+            ctx.fill();
         }
         requestAnimationFrame(draw);
     }
     draw();
 })();
 </script>
-""", height=0)
+""", height=800)
 
 
 # ════════════════════════════════════════
@@ -541,7 +566,7 @@ with cols[3]:
     prob_style = "green" if prob >= 60 else "amber" if prob >= 40 else "red"
     st.markdown(card("P(Upside)", f"{prob:.0f}%" if prob else "—", f"{mc.get('iterations',5000):,} sims" if mc else "", prob_style), unsafe_allow_html=True)
 with cols[4]:
-    st.markdown(f'<div class="metric-card" style="background:{"rgba(62,207,142,0.06)" if "BUY" in verdict else "rgba(248,81,73,0.06)" if "SELL" in verdict else "rgba(210,153,34,0.06)"}; border-color: {"rgba(62,207,142,0.2)" if "BUY" in verdict else "rgba(248,81,73,0.2)" if "SELL" in verdict else "rgba(210,153,34,0.2)"}"><div class="label">Verdict</div><div class="verdict-badge {verdict_class}">{verdict}</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="metric-card verdict-{verdict_class}" style="background:{"rgba(62,207,142,0.06)" if "BUY" in verdict else "rgba(248,81,73,0.06)" if "SELL" in verdict else "rgba(210,153,34,0.06)"}"><div class="label">Verdict</div><div class="verdict-badge {verdict_class}">{verdict}</div></div>', unsafe_allow_html=True)
 
 st.markdown('<div class="shimmer-line"></div>', unsafe_allow_html=True)
 
