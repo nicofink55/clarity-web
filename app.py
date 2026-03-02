@@ -27,12 +27,15 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
     /* ── Base ── */
-    .stApp { background-color: #0b0e14; }
-    section[data-testid="stSidebar"] { background-color: #0f1219; border-right: 1px solid #1a1f2e; }
+    .stApp { background-color: #060910; }
+    section[data-testid="stSidebar"] { background: linear-gradient(180deg, #0a0e17 0%, #080c14 100%); border-right: 1px solid rgba(62,207,142,0.08); }
     h1, h2, h3 { color: #e2e8f0 !important; font-family: 'Inter', sans-serif !important; }
     .stMarkdown p, .stMarkdown li { color: #94a3b8; font-family: 'Inter', sans-serif; }
     #MainMenu, footer { visibility: hidden; }
     .block-container { padding-top: 1.5rem !important; }
+
+    /* ── Neural network canvas ── */
+    #neural-bg { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
 
     /* ── Metrics ── */
     [data-testid="stMetricValue"] { color: #3ecf8e !important; font-family: 'JetBrains Mono', monospace !important; font-weight: 600 !important; }
@@ -41,97 +44,224 @@ st.markdown("""
 
     /* ── Inputs ── */
     .stTextInput input, .stNumberInput input {
-        background-color: #141825 !important; color: #3ecf8e !important;
-        border: 1px solid #1e2536 !important; border-radius: 8px !important;
+        background-color: rgba(20,24,37,0.8) !important; color: #3ecf8e !important;
+        border: 1px solid rgba(62,207,142,0.15) !important; border-radius: 8px !important;
         font-family: 'JetBrains Mono', monospace !important; font-weight: 600 !important;
+        backdrop-filter: blur(8px);
     }
-    .stTextInput input:focus, .stNumberInput input:focus { border-color: #3ecf8e !important; box-shadow: 0 0 0 1px rgba(62,207,142,0.2) !important; }
-    .stSelectbox > div > div { background-color: #141825; color: #cbd5e1; border: 1px solid #1e2536; border-radius: 8px; }
+    .stTextInput input:focus, .stNumberInput input:focus {
+        border-color: #3ecf8e !important;
+        box-shadow: 0 0 12px rgba(62,207,142,0.15), 0 0 0 1px rgba(62,207,142,0.2) !important;
+    }
+    .stSelectbox > div > div { background-color: rgba(20,24,37,0.8); color: #cbd5e1; border: 1px solid rgba(62,207,142,0.1); border-radius: 8px; }
     input[aria-label="Ticker"] { text-transform: uppercase !important; font-size: 1.1rem !important; }
 
     /* ── Buttons ── */
     .stButton > button, .stFormSubmitButton > button {
-        background-color: #141825; color: #94a3b8; border: 1px solid #1e2536;
-        font-weight: 600; border-radius: 8px; transition: all 0.2s; font-family: 'Inter', sans-serif;
+        background-color: rgba(20,24,37,0.6); color: #94a3b8; border: 1px solid rgba(62,207,142,0.1);
+        font-weight: 600; border-radius: 8px; transition: all 0.3s ease; font-family: 'Inter', sans-serif;
+        backdrop-filter: blur(4px);
     }
-    .stButton > button:hover, .stFormSubmitButton > button:hover { background-color: #1a2030; border-color: #3ecf8e; color: #3ecf8e; }
+    .stButton > button:hover, .stFormSubmitButton > button:hover {
+        background-color: rgba(26,32,48,0.8); border-color: rgba(62,207,142,0.4); color: #3ecf8e;
+        box-shadow: 0 0 20px rgba(62,207,142,0.08);
+    }
     button[kind="primary"], .stFormSubmitButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #3ecf8e 0%, #2da872 100%) !important;
-        color: #0b0e14 !important; border: none !important; font-weight: 700 !important;
+        background: linear-gradient(135deg, #3ecf8e 0%, #22a870 100%) !important;
+        color: #060910 !important; border: none !important; font-weight: 700 !important;
         border-radius: 8px !important; letter-spacing: 0.02em;
+        box-shadow: 0 4px 20px rgba(62,207,142,0.2);
     }
     button[kind="primary"]:hover, .stFormSubmitButton > button[kind="primary"]:hover {
         background: linear-gradient(135deg, #4ae09e 0%, #3ecf8e 100%) !important;
-        box-shadow: 0 4px 16px rgba(62,207,142,0.25) !important;
+        box-shadow: 0 4px 30px rgba(62,207,142,0.35) !important;
+        transform: translateY(-1px);
     }
 
     /* ── Tabs ── */
-    .stTabs [data-baseweb="tab-list"] { gap: 0; border-bottom: 1px solid #1e2536; }
-    .stTabs [data-baseweb="tab"] { color: #64748b; font-family: 'Inter', sans-serif; font-weight: 500; font-size: 0.85rem; padding: 10px 20px; }
-    .stTabs [aria-selected="true"] { color: #3ecf8e !important; border-bottom: 2px solid #3ecf8e !important; font-weight: 600; }
-    .stTabs [data-baseweb="tab"]:hover { color: #cbd5e1; }
+    .stTabs [data-baseweb="tab-list"] { gap: 0; border-bottom: 1px solid rgba(62,207,142,0.08); }
+    .stTabs [data-baseweb="tab"] { color: #4b5563; font-family: 'Inter', sans-serif; font-weight: 500; font-size: 0.85rem; padding: 10px 20px; transition: all 0.3s ease; }
+    .stTabs [aria-selected="true"] { color: #3ecf8e !important; border-bottom: 2px solid #3ecf8e !important; font-weight: 600; text-shadow: 0 0 20px rgba(62,207,142,0.3); }
+    .stTabs [data-baseweb="tab"]:hover { color: #94a3b8; }
 
     /* ── Dividers ── */
-    hr { border-color: #1a1f2e !important; margin: 0.75rem 0 !important; }
-
-    /* ── Tables (Streamlit dataframe) ── */
-    .stDataFrame { border-radius: 8px; overflow: hidden; }
+    hr { border-color: rgba(62,207,142,0.06) !important; margin: 0.75rem 0 !important; }
 
     /* ── Card containers ── */
     .metric-card {
-        background: linear-gradient(145deg, #111520 0%, #0d1018 100%);
-        border: 1px solid #1a2030; border-radius: 12px; padding: 20px 24px;
-        text-align: center;
+        background: linear-gradient(145deg, rgba(17,21,32,0.9) 0%, rgba(13,16,24,0.9) 100%);
+        border: 1px solid rgba(62,207,142,0.1); border-radius: 12px; padding: 20px 24px;
+        text-align: center; backdrop-filter: blur(12px);
+        transition: all 0.3s ease; position: relative; overflow: hidden;
     }
+    .metric-card::before {
+        content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(62,207,142,0.3), transparent);
+        opacity: 0; transition: opacity 0.3s ease;
+    }
+    .metric-card:hover { border-color: rgba(62,207,142,0.25); transform: translateY(-2px); box-shadow: 0 8px 32px rgba(62,207,142,0.08); }
+    .metric-card:hover::before { opacity: 1; }
     .metric-card .label { color: #64748b; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; font-family: 'Inter', sans-serif; margin-bottom: 6px; }
     .metric-card .value { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 1.7rem; }
     .metric-card .sub { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; margin-top: 4px; }
-    .metric-card.green .value { color: #3ecf8e; }
-    .metric-card.red .value { color: #f85149; }
+    .metric-card.green .value { color: #3ecf8e; text-shadow: 0 0 30px rgba(62,207,142,0.2); }
+    .metric-card.red .value { color: #f85149; text-shadow: 0 0 30px rgba(248,81,73,0.2); }
     .metric-card.white .value { color: #e2e8f0; }
-    .metric-card.amber .value { color: #d29922; }
+    .metric-card.amber .value { color: #d29922; text-shadow: 0 0 30px rgba(210,153,34,0.2); }
 
     .section-card {
-        background: #111520; border: 1px solid #1a2030; border-radius: 12px;
-        padding: 24px; margin-bottom: 16px;
+        background: rgba(17,21,32,0.7); border: 1px solid rgba(62,207,142,0.08); border-radius: 12px;
+        padding: 24px; margin-bottom: 16px; backdrop-filter: blur(12px);
+        transition: all 0.3s ease; position: relative;
     }
+    .section-card:hover { border-color: rgba(62,207,142,0.15); box-shadow: 0 4px 24px rgba(62,207,142,0.04); }
     .section-card h4 { color: #e2e8f0; font-family: 'Inter', sans-serif; font-weight: 600; font-size: 0.95rem; margin: 0 0 16px 0; }
 
     /* ── Styled HTML tables ── */
     .styled-table { width: 100%; border-collapse: separate; border-spacing: 0; border-radius: 8px; overflow: hidden; font-family: 'Inter', sans-serif; }
     .styled-table thead th {
-        background: #141825; color: #64748b; font-size: 0.7rem; text-transform: uppercase;
-        letter-spacing: 0.08em; padding: 10px 16px; text-align: left; font-weight: 600; border-bottom: 1px solid #1e2536;
+        background: rgba(20,24,37,0.8); color: #64748b; font-size: 0.7rem; text-transform: uppercase;
+        letter-spacing: 0.08em; padding: 10px 16px; text-align: left; font-weight: 600; border-bottom: 1px solid rgba(62,207,142,0.08);
     }
     .styled-table tbody td {
-        padding: 11px 16px; color: #cbd5e1; font-size: 0.85rem; border-bottom: 1px solid #141825;
+        padding: 11px 16px; color: #cbd5e1; font-size: 0.85rem; border-bottom: 1px solid rgba(20,24,37,0.5);
+        transition: all 0.2s ease;
     }
-    .styled-table tbody tr { background: #0f1219; }
-    .styled-table tbody tr:hover { background: #141825; }
+    .styled-table tbody tr { background: rgba(15,18,25,0.6); transition: all 0.2s ease; }
+    .styled-table tbody tr:hover { background: rgba(62,207,142,0.04); }
     .styled-table .num { font-family: 'JetBrains Mono', monospace; font-weight: 500; }
-    .styled-table .pos { color: #3ecf8e; }
-    .styled-table .neg { color: #f85149; }
-    .styled-table .dim { color: #64748b; }
+    .styled-table .pos { color: #3ecf8e; text-shadow: 0 0 12px rgba(62,207,142,0.2); }
+    .styled-table .neg { color: #f85149; text-shadow: 0 0 12px rgba(248,81,73,0.2); }
+    .styled-table .dim { color: #4b5563; }
 
     /* ── Verdict badges ── */
     .verdict-badge {
-        display: inline-block; padding: 6px 18px; border-radius: 6px;
+        display: inline-block; padding: 8px 20px; border-radius: 8px;
         font-family: 'JetBrains Mono', monospace; font-weight: 800; font-size: 1.1rem;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.06em; animation: verdictPulse 3s ease-in-out infinite;
     }
-    .verdict-badge.buy { background: rgba(62,207,142,0.12); color: #3ecf8e; border: 1px solid rgba(62,207,142,0.25); }
-    .verdict-badge.sell { background: rgba(248,81,73,0.12); color: #f85149; border: 1px solid rgba(248,81,73,0.25); }
-    .verdict-badge.hold { background: rgba(210,153,34,0.12); color: #d29922; border: 1px solid rgba(210,153,34,0.25); }
+    .verdict-badge.buy { background: rgba(62,207,142,0.12); color: #3ecf8e; border: 1px solid rgba(62,207,142,0.3); text-shadow: 0 0 20px rgba(62,207,142,0.4); }
+    .verdict-badge.sell { background: rgba(248,81,73,0.12); color: #f85149; border: 1px solid rgba(248,81,73,0.3); text-shadow: 0 0 20px rgba(248,81,73,0.4); }
+    .verdict-badge.hold { background: rgba(210,153,34,0.12); color: #d29922; border: 1px solid rgba(210,153,34,0.3); text-shadow: 0 0 20px rgba(210,153,34,0.4); }
+
+    @keyframes verdictPulse {
+        0%, 100% { box-shadow: 0 0 8px rgba(62,207,142,0.1); }
+        50% { box-shadow: 0 0 24px rgba(62,207,142,0.2); }
+    }
+
+    /* ── Glow animation for fair value ── */
+    @keyframes breatheGlow {
+        0%, 100% { text-shadow: 0 0 20px rgba(62,207,142,0.2); }
+        50% { text-shadow: 0 0 40px rgba(62,207,142,0.4), 0 0 80px rgba(62,207,142,0.1); }
+    }
+    .glow-value { animation: breatheGlow 4s ease-in-out infinite; }
+
+    /* ── Shimmer line ── */
+    @keyframes shimmer {
+        0% { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+    }
+    .shimmer-line {
+        height: 1px; margin: 16px 0;
+        background: linear-gradient(90deg, transparent, rgba(62,207,142,0.3), transparent);
+        background-size: 200% 100%;
+        animation: shimmer 3s ease-in-out infinite;
+    }
 
     /* ── Log ── */
-    div[data-testid="stExpander"] { background-color: #0f1219; border: 1px solid #1a2030; border-radius: 8px; }
+    div[data-testid="stExpander"] { background-color: rgba(15,18,25,0.8); border: 1px solid rgba(62,207,142,0.08); border-radius: 8px; backdrop-filter: blur(8px); }
 
-    /* ── Sidebar section labels ── */
+    /* ── Sidebar ── */
     .sidebar-section { color: #94a3b8; font-family: 'Inter', sans-serif; font-weight: 600; font-size: 0.8rem; letter-spacing: 0.04em; margin-bottom: 8px; }
 
-    /* ── Info/warning boxes ── */
-    .stAlert { border-radius: 8px; }
+    /* ── Alert boxes ── */
+    .stAlert { border-radius: 8px; backdrop-filter: blur(4px); }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #060910; }
+    ::-webkit-scrollbar-thumb { background: rgba(62,207,142,0.15); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(62,207,142,0.3); }
 </style>
+
+<!-- Neural Network Background -->
+<canvas id="neural-bg"></canvas>
+<script>
+(function() {
+    const canvas = document.getElementById('neural-bg');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let w, h, nodes = [], mouse = {x: -1000, y: -1000};
+
+    function resize() {
+        w = canvas.width = window.innerWidth;
+        h = canvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    document.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+
+    const NODE_COUNT = Math.min(80, Math.floor(window.innerWidth * window.innerHeight / 18000));
+    for (let i = 0; i < NODE_COUNT; i++) {
+        nodes.push({
+            x: Math.random() * w, y: Math.random() * h,
+            vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3,
+            r: Math.random() * 1.5 + 0.5,
+            pulse: Math.random() * Math.PI * 2,
+            pulseSpeed: Math.random() * 0.01 + 0.005
+        });
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, w, h);
+        for (let i = 0; i < nodes.length; i++) {
+            const n = nodes[i];
+            n.x += n.vx; n.y += n.vy;
+            n.pulse += n.pulseSpeed;
+            if (n.x < -50) n.x = w + 50;
+            if (n.x > w + 50) n.x = -50;
+            if (n.y < -50) n.y = h + 50;
+            if (n.y > h + 50) n.y = -50;
+            const mdx = n.x - mouse.x, mdy = n.y - mouse.y;
+            const mdist = Math.sqrt(mdx * mdx + mdy * mdy);
+            if (mdist < 150) {
+                n.vx += (mdx / mdist) * 0.02;
+                n.vy += (mdy / mdist) * 0.02;
+            }
+            n.vx *= 0.999; n.vy *= 0.999;
+            const pulseAlpha = 0.3 + Math.sin(n.pulse) * 0.15;
+            for (let j = i + 1; j < nodes.length; j++) {
+                const m = nodes[j];
+                const dx = n.x - m.x, dy = n.y - m.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < 160) {
+                    const alpha = (1 - dist / 160) * 0.12;
+                    ctx.beginPath();
+                    ctx.moveTo(n.x, n.y);
+                    ctx.lineTo(m.x, m.y);
+                    ctx.strokeStyle = 'rgba(62, 207, 142, ' + alpha + ')';
+                    ctx.lineWidth = 0.5;
+                    ctx.stroke();
+                }
+            }
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(62, 207, 142, ' + pulseAlpha + ')';
+            ctx.fill();
+            if (mdist < 200) {
+                const glowAlpha = (1 - mdist / 200) * 0.25;
+                ctx.beginPath();
+                ctx.arc(n.x, n.y, n.r + 4, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(62, 207, 142, ' + glowAlpha + ')';
+                ctx.fill();
+            }
+        }
+        requestAnimationFrame(draw);
+    }
+    draw();
+})();
+</script>
 """, unsafe_allow_html=True)
 
 
@@ -139,9 +269,10 @@ st.markdown("""
 #  HELPERS
 # ════════════════════════════════════════
 
-def card(label, value, sub="", style="green"):
+def card(label, value, sub="", style="green", glow=False):
+    glow_cls = " glow-value" if glow else ""
     sub_html = f'<div class="sub" style="color:{"#3ecf8e" if "+" in sub else "#f85149" if "-" in sub else "#64748b"}">{sub}</div>' if sub else ""
-    return f'<div class="metric-card {style}"><div class="label">{label}</div><div class="value">{value}</div>{sub_html}</div>'
+    return f'<div class="metric-card {style}"><div class="label">{label}</div><div class="value{glow_cls}">{value}</div>{sub_html}</div>'
 
 def html_table(headers, rows, col_styles=None):
     """Build a styled HTML table. col_styles: list of dicts per column for CSS classes."""
@@ -363,20 +494,21 @@ if not st.session_state.dcf_result:
     else:
         st.markdown("""
         <div style="text-align: center; padding: 100px 20px 60px;">
-            <div style="font-family: 'JetBrains Mono', monospace; font-size: 3.5rem; font-weight: 800; color: #e2e8f0; letter-spacing: -0.03em;">Clarity</div>
-            <div style="color: #4b5563; font-size: 1rem; margin-top: 8px; font-family: 'Inter', sans-serif;">
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 3.5rem; font-weight: 800; color: #e2e8f0; letter-spacing: -0.03em; text-shadow: 0 0 60px rgba(62,207,142,0.15);">Clarity</div>
+            <div class="shimmer-line" style="max-width: 200px; margin: 16px auto;"></div>
+            <div style="color: #64748b; font-size: 1rem; margin-top: 8px; font-family: 'Inter', sans-serif;">
                 SEC Filing → Multi-Model Valuation in seconds
             </div>
-            <div style="display: flex; justify-content: center; gap: 12px; margin-top: 40px; flex-wrap: wrap;">
-                <span style="background: #111520; border: 1px solid #1a2030; border-radius: 6px; padding: 6px 14px; color: #64748b; font-size: 0.75rem; font-family: Inter, sans-serif;">DCF</span>
-                <span style="background: #111520; border: 1px solid #1a2030; border-radius: 6px; padding: 6px 14px; color: #64748b; font-size: 0.75rem; font-family: Inter, sans-serif;">Residual Income</span>
-                <span style="background: #111520; border: 1px solid #1a2030; border-radius: 6px; padding: 6px 14px; color: #64748b; font-size: 0.75rem; font-family: Inter, sans-serif;">Comps</span>
-                <span style="background: #111520; border: 1px solid #1a2030; border-radius: 6px; padding: 6px 14px; color: #64748b; font-size: 0.75rem; font-family: Inter, sans-serif;">ROIC Fade</span>
-                <span style="background: #111520; border: 1px solid #1a2030; border-radius: 6px; padding: 6px 14px; color: #64748b; font-size: 0.75rem; font-family: Inter, sans-serif;">EV/Revenue</span>
-                <span style="background: #111520; border: 1px solid #1a2030; border-radius: 6px; padding: 6px 14px; color: #64748b; font-size: 0.75rem; font-family: Inter, sans-serif;">DDM</span>
-                <span style="background: #111520; border: 1px solid #1a2030; border-radius: 6px; padding: 6px 14px; color: #64748b; font-size: 0.75rem; font-family: Inter, sans-serif;">Monte Carlo</span>
+            <div style="display: flex; justify-content: center; gap: 10px; margin-top: 40px; flex-wrap: wrap;">
+                <span style="background: rgba(17,21,32,0.7); border: 1px solid rgba(62,207,142,0.1); border-radius: 20px; padding: 6px 16px; color: #4b5563; font-size: 0.75rem; font-family: Inter, sans-serif; backdrop-filter: blur(4px); transition: all 0.3s;">DCF</span>
+                <span style="background: rgba(17,21,32,0.7); border: 1px solid rgba(62,207,142,0.1); border-radius: 20px; padding: 6px 16px; color: #4b5563; font-size: 0.75rem; font-family: Inter, sans-serif; backdrop-filter: blur(4px);">Residual Income</span>
+                <span style="background: rgba(17,21,32,0.7); border: 1px solid rgba(62,207,142,0.1); border-radius: 20px; padding: 6px 16px; color: #4b5563; font-size: 0.75rem; font-family: Inter, sans-serif; backdrop-filter: blur(4px);">Comps</span>
+                <span style="background: rgba(17,21,32,0.7); border: 1px solid rgba(62,207,142,0.1); border-radius: 20px; padding: 6px 16px; color: #4b5563; font-size: 0.75rem; font-family: Inter, sans-serif; backdrop-filter: blur(4px);">ROIC Fade</span>
+                <span style="background: rgba(17,21,32,0.7); border: 1px solid rgba(62,207,142,0.1); border-radius: 20px; padding: 6px 16px; color: #4b5563; font-size: 0.75rem; font-family: Inter, sans-serif; backdrop-filter: blur(4px);">EV/Revenue</span>
+                <span style="background: rgba(17,21,32,0.7); border: 1px solid rgba(62,207,142,0.1); border-radius: 20px; padding: 6px 16px; color: #4b5563; font-size: 0.75rem; font-family: Inter, sans-serif; backdrop-filter: blur(4px);">DDM</span>
+                <span style="background: rgba(17,21,32,0.7); border: 1px solid rgba(62,207,142,0.1); border-radius: 20px; padding: 6px 16px; color: #4b5563; font-size: 0.75rem; font-family: Inter, sans-serif; backdrop-filter: blur(4px);">Monte Carlo</span>
             </div>
-            <div style="color: #334155; font-size: 0.8rem; margin-top: 40px; font-family: 'Inter', sans-serif;">
+            <div style="color: #334155; font-size: 0.8rem; margin-top: 50px; font-family: 'Inter', sans-serif;">
                 Enter a ticker in the sidebar to get started
             </div>
         </div>""", unsafe_allow_html=True)
@@ -411,7 +543,7 @@ st.markdown(f'<div style="display:flex;align-items:baseline;gap:12px;margin-bott
 cols = st.columns(5)
 with cols[0]:
     delta_color = "#3ecf8e" if upside >= 0 else "#f85149"
-    st.markdown(card("Fair Value", f"${fv:,.2f}", f"{upside:+.1f}%", "green" if upside >= 0 else "red"), unsafe_allow_html=True)
+    st.markdown(card("Fair Value", f"${fv:,.2f}", f"{upside:+.1f}%", "green" if upside >= 0 else "red", glow=True), unsafe_allow_html=True)
 with cols[1]:
     st.markdown(card("Market Price", f"${price:,.2f}", "", "white"), unsafe_allow_html=True)
 with cols[2]:
@@ -423,7 +555,7 @@ with cols[3]:
 with cols[4]:
     st.markdown(f'<div class="metric-card" style="background:{"rgba(62,207,142,0.06)" if "BUY" in verdict else "rgba(248,81,73,0.06)" if "SELL" in verdict else "rgba(210,153,34,0.06)"}; border-color: {"rgba(62,207,142,0.2)" if "BUY" in verdict else "rgba(248,81,73,0.2)" if "SELL" in verdict else "rgba(210,153,34,0.2)"}"><div class="label">Verdict</div><div class="verdict-badge {verdict_class}">{verdict}</div></div>', unsafe_allow_html=True)
 
-st.markdown('<div style="height:12px"></div>', unsafe_allow_html=True)
+st.markdown('<div class="shimmer-line"></div>', unsafe_allow_html=True)
 
 # ── TABS ──
 tab_overview, tab_models, tab_scenarios, tab_financials, tab_context = st.tabs(["📈 Overview", "🔬 Models", "🎯 Scenarios", "📋 Financials", "🌐 Market Context"])
@@ -665,7 +797,9 @@ with tab_financials:
 
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown(f'<div class="section-card"><h4>Income & Cash Flow</h4>{html_table(["Metric", "Value"], left_rows)}</div>', unsafe_allow_html=True)
+            is_quarterly = fins.get('_form', '') in ('10-Q', '10-Q/A')
+            ann_note = ' <span style="color:#64748b;font-size:0.7rem;font-weight:400">(annualized)</span>' if is_quarterly else ''
+            st.markdown(f'<div class="section-card"><h4>Income & Cash Flow{ann_note}</h4>{html_table(["Metric", "Value"], left_rows)}</div>', unsafe_allow_html=True)
         with c2:
             st.markdown(f'<div class="section-card"><h4>Balance Sheet</h4>{html_table(["Metric", "Value"], right_rows)}</div>', unsafe_allow_html=True)
 
@@ -678,7 +812,7 @@ with tab_financials:
         meta_html = f'<div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:4px">'
         meta_html += f'<span style="color:#475569;font-size:0.75rem;font-family:Inter,sans-serif">FCF: {capex_method}</span>'
         meta_html += f'<span style="color:#475569;font-size:0.75rem;font-family:Inter,sans-serif">Sector: {SECTOR_NAMES.get(sector, sector)}</span>'
-        meta_html += f'<span style="color:#475569;font-size:0.75rem;font-family:Inter,sans-serif">Filing: {form_type_str}</span>'
+        meta_html += f'<span style="color:#475569;font-size:0.75rem;font-family:Inter,sans-serif">Filing: {form_type_str}{"  ·  All figures annualized" if is_quarterly else ""}</span>'
         meta_html += f'<span style="color:#475569;font-size:0.75rem;font-family:Inter,sans-serif">Comps: {comps_info}</span>'
         meta_html += '</div>'
         st.markdown(meta_html, unsafe_allow_html=True)
