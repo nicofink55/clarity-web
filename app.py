@@ -31,7 +31,7 @@ st.markdown("""
     section[data-testid="stSidebar"] { background-color: #0f1219; border-right: 1px solid #1a1f2e; }
     h1, h2, h3 { color: #e2e8f0 !important; font-family: 'Inter', sans-serif !important; }
     .stMarkdown p, .stMarkdown li { color: #94a3b8; font-family: 'Inter', sans-serif; }
-    #MainMenu, footer, header { visibility: hidden; }
+    #MainMenu, footer { visibility: hidden; }
     .block-container { padding-top: 1.5rem !important; }
 
     /* ── Metrics ── */
