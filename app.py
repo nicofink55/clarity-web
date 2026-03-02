@@ -89,7 +89,7 @@ st.markdown("""
 
     /* ══ GLASS CARD — Horizon style ══ */
     .metric-card {
-        background: rgba(10,15,25,0.55);
+        background: rgba(14,20,32,0.85);
         border: 1px solid rgba(62,207,142,0.08);
         border-radius: 16px; padding: 22px 24px;
         text-align: center; backdrop-filter: blur(16px) saturate(1.2);
@@ -135,7 +135,7 @@ st.markdown("""
 
     /* ══ SECTION CARD — Glass panel ══ */
     .section-card {
-        background: rgba(10,15,25,0.5);
+        background: rgba(14,20,32,0.8);
         border: 1px solid rgba(62,207,142,0.06);
         border-radius: 16px; padding: 28px; margin-bottom: 16px;
         backdrop-filter: blur(16px) saturate(1.2);
@@ -148,12 +148,12 @@ st.markdown("""
         background: linear-gradient(90deg, transparent, rgba(62,207,142,0.15), transparent);
     }
     .section-card:hover { border-color: rgba(62,207,142,0.12); box-shadow: 0 8px 32px rgba(0,0,0,0.3), 0 0 20px rgba(62,207,142,0.02); }
-    .section-card h4 { color: #e2e8f0; font-family: Inter,sans-serif; font-weight: 600; font-size: 0.9rem; margin: 0 0 18px 0; letter-spacing: 0.01em; }
+    .section-card h4 { color: #3ecf8e; font-family: Inter,sans-serif; font-weight: 600; font-size: 0.9rem; margin: 0 0 18px 0; letter-spacing: 0.01em; }
 
     /* ══ TABLE — Horizon glass rows ══ */
     .styled-table { width: 100%; border-collapse: separate; border-spacing: 0; border-radius: 10px; overflow: hidden; font-family: Inter,sans-serif; }
     .styled-table thead th {
-        background: rgba(12,18,30,0.6); color: #5a6478; font-size: 0.65rem; text-transform: uppercase;
+        background: rgba(10,16,28,0.9); color: #5a6478; font-size: 0.65rem; text-transform: uppercase;
         letter-spacing: 0.1em; padding: 12px 18px; text-align: left; font-weight: 600;
         border-bottom: 1px solid rgba(62,207,142,0.06);
     }
@@ -162,7 +162,7 @@ st.markdown("""
         border-bottom: 1px solid rgba(62,207,142,0.03);
         transition: all 0.25s ease;
     }
-    .styled-table tbody tr { background: rgba(8,12,22,0.4); transition: all 0.25s ease; }
+    .styled-table tbody tr { background: rgba(10,16,26,0.7); transition: all 0.25s ease; }
     .styled-table tbody tr:hover { background: rgba(62,207,142,0.03); }
     .styled-table .num { font-family: JetBrains Mono,monospace; font-weight: 500; }
     .styled-table .pos { color: #3ecf8e; }
@@ -242,7 +242,7 @@ components.html("""
         nodes.push({
             x: Math.random() * 2400, y: Math.random() * 1600,
             vx: (Math.random() - 0.5) * 0.35, vy: (Math.random() - 0.5) * 0.35,
-            r: Math.random() * 2 + 0.8,
+            r: Math.random() * 2.2 + 1,
             p: Math.random() * Math.PI * 2,
             ps: Math.random() * 0.01 + 0.005
         });
@@ -259,18 +259,18 @@ components.html("""
             for (var j = i + 1; j < nodes.length; j++) {
                 var m = nodes[j];
                 var dx = n.x - m.x, dy = n.y - m.y, d = Math.sqrt(dx*dx + dy*dy);
-                if (d < 180) {
+                if (d < 200) {
                     ctx.beginPath(); ctx.moveTo(n.x, n.y); ctx.lineTo(m.x, m.y);
-                    ctx.strokeStyle = 'rgba(62,207,142,' + ((1 - d/180) * 0.18) + ')';
+                    ctx.strokeStyle = 'rgba(62,207,142,' + ((1 - d/200) * 0.25) + ')';
                     ctx.lineWidth = 0.6; ctx.stroke();
                 }
             }
-            var a = 0.35 + Math.sin(n.p) * 0.2;
+            var a = 0.5 + Math.sin(n.p) * 0.25;
             ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
             ctx.fillStyle = 'rgba(62,207,142,' + a + ')'; ctx.fill();
             if (n.r > 1.5) {
                 ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 4, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(62,207,142,' + (a * 0.15) + ')'; ctx.fill();
+                ctx.fillStyle = 'rgba(62,207,142,' + (a * 0.25) + ')'; ctx.fill();
             }
         }
         requestAnimationFrame(draw);
@@ -603,17 +603,17 @@ with tab_overview:
         fig = go.Figure()
         # Outer uncertainty cone
         fig.add_trace(go.Scatter(x=years+years[::-1], y=upper+lower[::-1],
-            fill='toself', fillcolor='rgba(62,207,142,0.04)', line=dict(width=0),
+            fill='toself', fillcolor='rgba(62,207,142,0.1)', line=dict(width=0),
             showlegend=False, hoverinfo='skip', name='_outer'))
         # Inner cone (1σ)
         fig.add_trace(go.Scatter(x=years+years[::-1], y=iu+il[::-1],
-            fill='toself', fillcolor='rgba(62,207,142,0.08)', line=dict(width=0),
+            fill='toself', fillcolor='rgba(62,207,142,0.12)', line=dict(width=0),
             showlegend=False, hoverinfo='skip', name='_inner'))
         # Fill under fair value line
         fig.add_trace(go.Scatter(x=years, y=[0]*ny, mode='lines', line=dict(width=0),
             showlegend=False, hoverinfo='skip'))
         fig.add_trace(go.Scatter(x=years, y=pw_s, mode='lines', fill='tonexty',
-            fillcolor='rgba(62,207,142,0.06)', line=dict(width=0),
+            fillcolor='rgba(62,207,142,0.1)', line=dict(width=0),
             showlegend=False, hoverinfo='skip'))
         # Fair value line (main)
         fig.add_trace(go.Scatter(x=years, y=pw_s, mode='lines+markers', name='Fair Value',
