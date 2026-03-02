@@ -564,19 +564,18 @@ display_name = company if company and company.upper() != ticker else ""
 st.markdown(f'<div style="display:flex;align-items:baseline;gap:14px;margin-bottom:8px;padding-top:4px"><span style="font-family:JetBrains Mono,monospace;font-size:2rem;font-weight:800;color:#e2e8f0;letter-spacing:-0.02em">{ticker}</span>{f"""<span style="color:#4b5563;font-size:0.95rem;font-family:Inter,sans-serif;font-weight:400">{display_name}</span>""" if display_name else ""}</div>', unsafe_allow_html=True)
 
 # ── Top metric cards ──
-row1 = st.columns(3)
-with row1[0]:
+c1, c2, c3, c4, c5 = st.columns(5, gap="small")
+with c1:
     st.markdown(card("Fair Value", f"${fv:,.2f}", f"{upside:+.1f}%", "green" if upside >= 0 else "red", glow=True), unsafe_allow_html=True)
-with row1[1]:
+with c2:
     st.markdown(card("Market Price", f"${price:,.2f}", "", "white"), unsafe_allow_html=True)
-with row1[2]:
+with c3:
     st.markdown(card("WACC", f"{r.get('wacc',0)*100:.2f}%", "", "white"), unsafe_allow_html=True)
-row2 = st.columns(2)
-with row2[0]:
+with c4:
     prob = mc.get('prob_above_price', 0) if mc else 0
     prob_style = "green" if prob >= 60 else "amber" if prob >= 40 else "red"
     st.markdown(card("P(Upside)", f"{prob:.0f}%" if prob else "—", f"{mc.get('iterations',5000):,} sims" if mc else "", prob_style), unsafe_allow_html=True)
-with row2[1]:
+with c5:
     st.markdown(f'<div class="metric-card verdict-{verdict_class}" style="background:{"rgba(62,207,142,0.06)" if "BUY" in verdict else "rgba(248,81,73,0.06)" if "SELL" in verdict else "rgba(210,153,34,0.06)"}"><div class="label">Verdict</div><div class="verdict-badge {verdict_class}">{verdict}</div></div>', unsafe_allow_html=True)
 
 st.markdown('<div class="shimmer-line"></div>', unsafe_allow_html=True)
