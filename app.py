@@ -24,11 +24,27 @@ st.set_page_config(page_title="Clarity", page_icon="📊", layout="wide", initia
 # ════════════════════════════════════════
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,700&display=swap');
+
+    /* ── Logo animations ── */
+    @keyframes logoFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+    @keyframes holoShift { 0% { filter: hue-rotate(0deg) brightness(1); } 50% { filter: hue-rotate(15deg) brightness(1.15); } 100% { filter: hue-rotate(0deg) brightness(1); } }
+    .logo-icon {
+        width: 42px; height: 42px; border-radius: 12px;
+        background: linear-gradient(135deg, rgba(62,207,142,0.2), rgba(30,120,90,0.4));
+        border: 1px solid rgba(62,207,142,0.25);
+        display: flex; align-items: center; justify-content: center;
+        font-family: 'Playfair Display', serif; font-weight: 700; font-style: italic;
+        font-size: 1.4rem; color: #3ecf8e;
+        box-shadow: 0 4px 20px rgba(62,207,142,0.15), inset 0 1px 0 rgba(255,255,255,0.05);
+        animation: logoFloat 4s ease-in-out infinite, holoShift 6s ease-in-out infinite;
+    }
+    .logo-text { font-family: 'Playfair Display', serif; font-weight: 700; font-style: italic; font-size: 1.4rem; color: #e2e8f0; letter-spacing: 0.01em; }
 
     /* ══ BASE ══ */
     .stApp { background: radial-gradient(ellipse at 20% 50%, rgba(10,25,20,1) 0%, #060910 50%, #050810 100%); }
-    section[data-testid="stSidebar"] { background: rgba(8,12,20,0.95); border-right: 1px solid rgba(62,207,142,0.06); backdrop-filter: blur(20px); }
+    section[data-testid="stSidebar"] { background: rgba(8,12,20,0.95); border-right: 1px solid rgba(62,207,142,0.06); backdrop-filter: blur(20px); overflow-y: auto !important; }
+    section[data-testid="stSidebar"] > div { overflow-y: auto !important; }
     h1,h2,h3 { color: #e2e8f0 !important; font-family: Inter,sans-serif !important; }
     .stMarkdown p, .stMarkdown li { color: #8b95a8; font-family: Inter,sans-serif; }
     #MainMenu, footer { visibility: hidden; }
@@ -254,8 +270,11 @@ components.html("""
             n.x += n.vx; n.y += n.vy; n.p += n.ps;
             if (n.x < -30) n.x = w + 30; if (n.x > w + 30) n.x = -30;
             if (n.y < -30) n.y = h + 30; if (n.y > h + 30) n.y = -30;
-            n.vx += (Math.random() - 0.5) * 0.008; n.vy += (Math.random() - 0.5) * 0.008;
-            n.vx *= 0.998; n.vy *= 0.998;
+            n.vx += (Math.random() - 0.5) * 0.012; n.vy += (Math.random() - 0.5) * 0.012;
+            n.vx *= 0.999; n.vy *= 0.999;
+            // Enforce minimum speed so nodes never stop
+            var spd = Math.sqrt(n.vx*n.vx + n.vy*n.vy);
+            if (spd < 0.15) { n.vx += (Math.random()-0.5)*0.3; n.vy += (Math.random()-0.5)*0.3; }
             for (var j = i + 1; j < nodes.length; j++) {
                 var m = nodes[j];
                 var dx = n.x - m.x, dy = n.y - m.y, d = Math.sqrt(dx*dx + dy*dy);
@@ -356,9 +375,9 @@ def run_valuation():
 # ════════════════════════════════════════
 
 with st.sidebar:
-    st.markdown("""<div style="display:flex;align-items:center;gap:12px;padding:4px 0 12px 0">
-        <div style="width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#3ecf8e,#1a9a6a);display:flex;align-items:center;justify-content:center;font-family:JetBrains Mono,monospace;font-weight:800;font-size:1.2rem;color:#060910;box-shadow:0 4px 16px rgba(62,207,142,0.25)">C</div>
-        <div><span style="font-family:JetBrains Mono,monospace;font-size:1.3rem;font-weight:700;color:#e2e8f0;letter-spacing:-0.02em">Clarity</span><br><span style="color:#3d4655;font-size:0.65rem;font-family:Inter,sans-serif;letter-spacing:0.06em;text-transform:uppercase">Valuation Engine</span></div>
+    st.markdown("""<div style="display:flex;align-items:center;gap:14px;padding:8px 0 16px 0">
+        <div class="logo-icon">C</div>
+        <div><span class="logo-text">Clarity</span><br><span style="color:#3d4655;font-size:0.6rem;font-family:Inter,sans-serif;letter-spacing:0.1em;text-transform:uppercase">Valuation Engine</span></div>
     </div>""", unsafe_allow_html=True)
     st.markdown('<hr style="margin: 0 0 16px 0; border-color: #1a1f2e">', unsafe_allow_html=True)
 
@@ -514,7 +533,7 @@ if not st.session_state.dcf_result:
     else:
         st.markdown("""
         <div style="text-align: center; padding: 100px 20px 60px;">
-            <div style="font-family: 'JetBrains Mono', monospace; font-size: 3.5rem; font-weight: 800; color: #e2e8f0; letter-spacing: -0.03em; text-shadow: 0 0 60px rgba(62,207,142,0.15);">Clarity</div>
+            <div style="font-family: 'Playfair Display', serif; font-size: 3.5rem; font-weight: 700; font-style: italic; color: #e2e8f0; letter-spacing: 0.01em; text-shadow: 0 0 60px rgba(62,207,142,0.15);">Clarity</div>
             <div class="shimmer-line" style="max-width: 200px; margin: 16px auto;"></div>
             <div style="color: #64748b; font-size: 1rem; margin-top: 8px; font-family: 'Inter', sans-serif;">
                 SEC Filing → Multi-Model Valuation in seconds
@@ -604,55 +623,48 @@ with tab_overview:
             iu.append(pv+sig); il.append(max(pv-sig, pv*0.1))
 
         fig = go.Figure()
-        # Outer uncertainty cone
-        fig.add_trace(go.Scatter(x=years+years[::-1], y=upper+lower[::-1],
-            fill='toself', fillcolor='rgba(62,207,142,0.1)', line=dict(width=0),
-            showlegend=False, hoverinfo='skip', name='_outer'))
-        # Inner cone (1σ)
-        fig.add_trace(go.Scatter(x=years+years[::-1], y=iu+il[::-1],
-            fill='toself', fillcolor='rgba(62,207,142,0.12)', line=dict(width=0),
-            showlegend=False, hoverinfo='skip', name='_inner'))
-        # Fill under fair value line
+        # Gradient fill under fair value line (Horizon style - prominent)
         fig.add_trace(go.Scatter(x=years, y=[0]*ny, mode='lines', line=dict(width=0),
             showlegend=False, hoverinfo='skip'))
         fig.add_trace(go.Scatter(x=years, y=pw_s, mode='lines', fill='tonexty',
-            fillcolor='rgba(62,207,142,0.1)', line=dict(width=0),
+            fillcolor='rgba(62,207,142,0.15)', line=dict(width=0),
             showlegend=False, hoverinfo='skip'))
         # Fair value line (main)
         fig.add_trace(go.Scatter(x=years, y=pw_s, mode='lines+markers', name='Fair Value',
-            line=dict(color='#3ecf8e', width=2.5, shape='spline', smoothing=1.1),
-            marker=dict(size=6, color='#3ecf8e', line=dict(width=2, color='#060910')),
+            line=dict(color='#3ecf8e', width=2.5, shape='spline', smoothing=1.2),
+            marker=dict(size=5, color='#3ecf8e', line=dict(width=1.5, color='#0a1018')),
             hovertemplate='Year %{x}: $%{y:,.2f}<extra></extra>'))
         # Market price reference
         if mkt_price > 0:
-            fig.add_hline(y=mkt_price, line_dash="dot", line_color="rgba(248,81,73,0.5)", line_width=1.5,
+            fig.add_hline(y=mkt_price, line_dash="dot", line_color="rgba(248,81,73,0.4)", line_width=1,
                           annotation_text=f"Market ${mkt_price:,.0f}",
-                          annotation_font=dict(color="#f85149", size=10, family="JetBrains Mono"),
+                          annotation_font=dict(color="#f85149", size=9, family="JetBrains Mono"),
                           annotation_position="bottom right")
-        # Scenario paths (hidden by default — click legend to show)
+        # Scenario paths (hidden by default)
         sc_colors = ['#22c55e','#3b82f6','#94a3b8','#f59e0b','#ef4444']
         for i, (sc, sp) in enumerate(zip(pp['scenarios'], scen_s)):
             fig.add_trace(go.Scatter(x=years, y=sp, mode='lines', name=sc.get('name',''),
-                line=dict(color=sc_colors[i%5], width=1, dash='dot'), opacity=0.5,
+                line=dict(color=sc_colors[i%5], width=1, dash='dot'), opacity=0.4,
                 visible='legendonly',
                 hovertemplate=f"{sc.get('name','')}: $%{{y:,.2f}}<extra></extra>"))
 
         fig.update_layout(
-            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-            xaxis=dict(title=None, gridcolor='rgba(62,207,142,0.04)', color='#475569', dtick=1, zeroline=False,
-                       tickfont=dict(family='JetBrains Mono', size=10), showline=False,
-                       ticksuffix='  '),
-            yaxis=dict(title=None, gridcolor='rgba(62,207,142,0.04)', color='#475569', tickformat='$,.0f', zeroline=False,
-                       tickfont=dict(family='JetBrains Mono', size=10), showline=False,
-                       tickprefix='  '),
-            legend=dict(font=dict(color='#64748b', size=10, family='Inter'), bgcolor='rgba(0,0,0,0)',
-                       orientation='h', yanchor='bottom', y=1.02, xanchor='center', x=0.5,
-                       itemclick='toggle', itemdoubleclick='toggleothers'),
-            margin=dict(l=55, r=20, t=8, b=30), height=380, hovermode='x unified',
-            hoverlabel=dict(bgcolor='rgba(20,24,37,0.95)', bordercolor='rgba(62,207,142,0.2)',
+            plot_bgcolor='rgba(10,16,24,0.9)', paper_bgcolor='rgba(0,0,0,0)',
+            xaxis=dict(title=None, gridcolor='rgba(62,207,142,0.05)', color='#3d4655', dtick=1,
+                       zeroline=False, showline=True, linecolor='rgba(62,207,142,0.08)', linewidth=1,
+                       tickfont=dict(family='JetBrains Mono', size=10)),
+            yaxis=dict(title=None, gridcolor='rgba(62,207,142,0.05)', color='#3d4655', tickformat='$,.0f',
+                       zeroline=False, showline=True, linecolor='rgba(62,207,142,0.08)', linewidth=1,
+                       tickfont=dict(family='JetBrains Mono', size=10)),
+            legend=dict(font=dict(color='#5a6478', size=9, family='Inter'), bgcolor='rgba(0,0,0,0)',
+                       orientation='h', yanchor='bottom', y=1.02, xanchor='center', x=0.5),
+            margin=dict(l=55, r=15, t=8, b=30), height=350, hovermode='x unified',
+            hoverlabel=dict(bgcolor='rgba(14,20,32,0.95)', bordercolor='rgba(62,207,142,0.15)',
                            font=dict(family='JetBrains Mono', size=11, color='#e2e8f0')),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.markdown('<div class="section-card" style="padding:16px 16px 8px 16px">', unsafe_allow_html=True)
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        st.markdown('</div>', unsafe_allow_html=True)
 
         # Projection table
         table_rows = []
