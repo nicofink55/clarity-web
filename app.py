@@ -43,8 +43,13 @@ st.markdown("""
 
     /* ══ BASE ══ */
     .stApp { background: radial-gradient(ellipse at 20% 50%, rgba(10,25,20,1) 0%, #060910 50%, #050810 100%); }
-    section[data-testid="stSidebar"] { background: rgba(8,12,20,0.95); border-right: 1px solid rgba(62,207,142,0.06); backdrop-filter: blur(20px); overflow-y: auto !important; }
-    section[data-testid="stSidebar"] > div { overflow-y: auto !important; }
+    section[data-testid="stSidebar"] { background: rgba(8,12,20,0.97); border-right: 1px solid rgba(62,207,142,0.06); }
+    section[data-testid="stSidebar"], section[data-testid="stSidebar"] > div,
+    section[data-testid="stSidebar"] [data-testid="stSidebarContent"],
+    section[data-testid="stSidebar"] .stMainBlockContainer {
+        overflow-y: auto !important; overflow-x: hidden !important;
+        max-height: 100vh !important;
+    }
     h1,h2,h3 { color: #e2e8f0 !important; font-family: Inter,sans-serif !important; }
     .stMarkdown p, .stMarkdown li { color: #8b95a8; font-family: Inter,sans-serif; }
     #MainMenu, footer { visibility: hidden; }
@@ -232,6 +237,20 @@ st.markdown("""
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: rgba(62,207,142,0.1); border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: rgba(62,207,142,0.2); }
+
+    /* ── Mobile responsive ── */
+    @media (max-width: 768px) {
+        .block-container { padding-top: 1rem !important; padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
+        .metric-card { padding: 14px 16px; border-radius: 12px; margin-bottom: 8px; }
+        .metric-card .value { font-size: 1.3rem; }
+        .metric-card .label { font-size: 0.55rem; margin-bottom: 4px; }
+        .metric-card .sub { font-size: 0.7rem; }
+        .section-card { padding: 16px; border-radius: 12px; }
+        .section-card h4 { font-size: 0.85rem; margin-bottom: 12px; }
+        .styled-table thead th { padding: 8px 10px; font-size: 0.6rem; }
+        .styled-table tbody td { padding: 8px 10px; font-size: 0.8rem; }
+        .verdict-badge { padding: 6px 16px; font-size: 0.9rem; }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -545,19 +564,19 @@ display_name = company if company and company.upper() != ticker else ""
 st.markdown(f'<div style="display:flex;align-items:baseline;gap:14px;margin-bottom:8px;padding-top:4px"><span style="font-family:JetBrains Mono,monospace;font-size:2rem;font-weight:800;color:#e2e8f0;letter-spacing:-0.02em">{ticker}</span>{f"""<span style="color:#4b5563;font-size:0.95rem;font-family:Inter,sans-serif;font-weight:400">{display_name}</span>""" if display_name else ""}</div>', unsafe_allow_html=True)
 
 # ── Top metric cards ──
-cols = st.columns(5)
-with cols[0]:
-    delta_color = "#3ecf8e" if upside >= 0 else "#f85149"
+row1 = st.columns(3)
+with row1[0]:
     st.markdown(card("Fair Value", f"${fv:,.2f}", f"{upside:+.1f}%", "green" if upside >= 0 else "red", glow=True), unsafe_allow_html=True)
-with cols[1]:
+with row1[1]:
     st.markdown(card("Market Price", f"${price:,.2f}", "", "white"), unsafe_allow_html=True)
-with cols[2]:
+with row1[2]:
     st.markdown(card("WACC", f"{r.get('wacc',0)*100:.2f}%", "", "white"), unsafe_allow_html=True)
-with cols[3]:
+row2 = st.columns(2)
+with row2[0]:
     prob = mc.get('prob_above_price', 0) if mc else 0
     prob_style = "green" if prob >= 60 else "amber" if prob >= 40 else "red"
     st.markdown(card("P(Upside)", f"{prob:.0f}%" if prob else "—", f"{mc.get('iterations',5000):,} sims" if mc else "", prob_style), unsafe_allow_html=True)
-with cols[4]:
+with row2[1]:
     st.markdown(f'<div class="metric-card verdict-{verdict_class}" style="background:{"rgba(62,207,142,0.06)" if "BUY" in verdict else "rgba(248,81,73,0.06)" if "SELL" in verdict else "rgba(210,153,34,0.06)"}"><div class="label">Verdict</div><div class="verdict-badge {verdict_class}">{verdict}</div></div>', unsafe_allow_html=True)
 
 st.markdown('<div class="shimmer-line"></div>', unsafe_allow_html=True)
