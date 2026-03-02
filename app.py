@@ -588,7 +588,7 @@ if not st.session_state.dcf_result:
             </div>
             <div class="shimmer-line" style="max-width:200px;margin:12px auto"></div>
             <div style="color:#8b95a8;font-size:1.05rem;margin:8px 0 0;font-family:Inter,sans-serif;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.6">
-                Institutional-grade equity valuation from SEC filings.<br>
+                Multi-model equity valuation from SEC filings & live market data.<br>
                 <span style="color:#5a6478">DCF · Residual Income · Comps · Monte Carlo — in seconds.</span>
             </div>
         </div>
@@ -1129,7 +1129,7 @@ st.markdown('<div class="shimmer-line" style="margin-top:32px"></div>', unsafe_a
 ft1, ft2, ft3 = st.columns([1, 2, 1])
 with ft1:
     share_url = f"https://clarity-web.streamlit.app/?ticker={ticker}"
-    st.markdown(f'<a href="{share_url}" target="_blank" style="display:inline-block;padding:8px 20px;background:rgba(62,207,142,0.08);border:1px solid rgba(62,207,142,0.15);border-radius:8px;color:#3ecf8e;font-family:Inter,sans-serif;font-size:0.8rem;font-weight:600;text-decoration:none;transition:all 0.3s">🔗 Share {ticker}</a>', unsafe_allow_html=True)
+    st.markdown(f'''<button onclick="navigator.clipboard.writeText('{share_url}').then(()=>{{this.innerText='✓ Copied!';setTimeout(()=>this.innerText='🔗 Share {ticker}',2000)}})" style="cursor:pointer;padding:8px 20px;background:rgba(62,207,142,0.08);border:1px solid rgba(62,207,142,0.15);border-radius:8px;color:#3ecf8e;font-family:Inter,sans-serif;font-size:0.8rem;font-weight:600;transition:all 0.3s">🔗 Share {ticker}</button>''', unsafe_allow_html=True)
 with ft3:
     if st.button("← New Analysis", key="new_analysis"):
         for k in ['fins', 'dcf_result', 'ticker', 'price', 'shares_mil', 'sector', 'beta',
