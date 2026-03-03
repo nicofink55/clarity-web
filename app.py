@@ -5,6 +5,7 @@ C L A R I T Y  —  Web Edition  (v2 — visual overhaul)
 import streamlit as st
 import plotly.graph_objects as go
 import json, os, math, time, tempfile, traceback
+from urllib.request import Request, urlopen
 
 from engine import (
     lookup_cik, find_filing, download_filing, find_filings,
@@ -354,6 +355,30 @@ for key, default in [('fins', None), ('dcf_result', None), ('ticker', ''), ('pri
 def log(msg, level="info"):
     st.session_state.log_messages.append((time.strftime("%H:%M:%S"), msg, level))
 
+# ── Analytics: log each valuation to Google Sheets ──
+ANALYTICS_WEBHOOK = os.environ.get("CLARITY_ANALYTICS_URL", "https://script.google.com/macros/s/AKfycbz2SAYKDvHGbJi5h5OoYQZl9WmxGFtc_0m9JHWpLoURcYpK_FnmD8Hq3AXT50rey0j5/exec")
+
+def track_valuation(ticker, company, sector, fv, price, upside, verdict, source="search"):
+    """Fire-and-forget POST to Google Sheets webhook."""
+    if not ANALYTICS_WEBHOOK:
+        return
+    try:
+        import threading
+        def _send():
+            try:
+                payload = json.dumps({
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "ticker": ticker, "company": company, "sector": sector,
+                    "fair_value": round(fv, 2), "price": round(price, 2),
+                    "upside": f"{upside:+.1f}%", "verdict": verdict, "source": source,
+                })
+                req = Request(ANALYTICS_WEBHOOK, data=payload.encode('utf-8'),
+                              headers={'Content-Type': 'application/json'}, method='POST')
+                urlopen(req, timeout=5)
+            except: pass
+        threading.Thread(target=_send, daemon=True).start()
+    except: pass
+
 def quick_run(ticker_val, form="10-K"):
     """Pull filing + market data + run valuation in one shot."""
     st.session_state.ticker = ticker_val
@@ -689,6 +714,13 @@ verdict_class = "buy" if "BUY" in verdict else "sell" if "SELL" in verdict else 
 mc = mm.get('monte_carlo') if mm else None
 ticker = st.session_state.ticker or "—"
 company = st.session_state.company_name or ""
+
+# ── Track this valuation (once per analysis) ──
+track_key = f"{ticker}_{fv:.0f}"
+if st.session_state.get('_last_tracked') != track_key:
+    source = "shared_link" if st.query_params.get("ticker") else "search"
+    track_valuation(ticker, company, SECTOR_NAMES.get(sector, sector), fv, price, upside, verdict, source)
+    st.session_state['_last_tracked'] = track_key
 
 # ── Header ──
 display_name = company if company and company.upper() != ticker else ""
