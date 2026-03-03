@@ -68,7 +68,7 @@ def _build_tape_list():
         if bt not in seen:
             trending.append(bt)
             seen.add(bt)
-    return STATIC_ETFS + trending
+    return STATIC_ETFS, trending
 
 
 def _yf_get(url):
@@ -111,86 +111,105 @@ def _fetch_quotes(tickers_tuple):
     return quotes
 
 
+def _item_html(t, q):
+    link = '<a class="tape-item" href="?ticker=' + t + '" target="_self">'
+    if q:
+        color = "#3ecf8e" if q["chg"] >= 0 else "#f85149"
+        arrow = "&#9650;" if q["chg"] >= 0 else "&#9660;"
+        glow = "rgba(62,207,142,0.3)" if q["chg"] >= 0 else "rgba(248,81,73,0.3)"
+        return (
+            link
+            + '<span class="tape-sym">' + t + "</span>"
+            + '<span class="tape-px">' + "{:,.2f}".format(q["price"]) + "</span>"
+            + '<span class="tape-chg" style="color:' + color
+            + ";text-shadow:0 0 8px " + glow + '">'
+            + arrow + " " + "{:+.2f}".format(q["chg"])
+            + " (" + "{:+.2f}%".format(q["pct"]) + ")</span></a>"
+        )
+    return (
+        link
+        + '<span class="tape-sym">' + t + "</span>"
+        + '<span class="tape-px" style="color:#3d4655">&mdash;</span></a>'
+    )
+
 def _tape_css(dur):
     return (
         "<style>"
         "@keyframes tickerScroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}"
         ".ticker-tape-wrap{"
-        "position:fixed;top:0;left:0;right:0;height:36px;"
-        "background:linear-gradient(180deg,rgba(8,12,20,0.97),rgba(8,12,20,0.90));"
-        "border-bottom:1px solid rgba(62,207,142,0.06);"
-        "z-index:999;overflow:hidden;backdrop-filter:blur(12px);"
-        "display:flex;align-items:center}"
-        ".ticker-tape-wrap::before,.ticker-tape-wrap::after{"
-        "content:'';position:absolute;top:0;bottom:0;width:60px;z-index:2;pointer-events:none}"
-        ".ticker-tape-wrap::before{"
-        "left:0;background:linear-gradient(90deg,rgba(8,12,20,0.97),transparent)}"
-        ".ticker-tape-wrap::after{"
-        "right:0;background:linear-gradient(-90deg,rgba(8,12,20,0.97),transparent)}"
+            "position:fixed;top:0;left:0;right:0;height:36px;"
+            "background:linear-gradient(180deg,rgba(8,12,20,0.97),rgba(8,12,20,0.90));"
+            "border-bottom:1px solid rgba(62,207,142,0.06);"
+            "z-index:999;overflow:hidden;backdrop-filter:blur(12px);"
+            "display:flex;align-items:center}"
+        ".tape-static{"
+            "display:flex;align-items:center;flex-shrink:0;height:100%;"
+            "border-right:1px solid rgba(62,207,142,0.10);"
+            "background:linear-gradient(180deg,rgba(8,12,20,0.99),rgba(8,12,20,0.95));"
+            "z-index:3;position:relative}"
+        ".tape-scroll-area{"
+            "flex:1;overflow:hidden;position:relative;height:100%;"
+            "display:flex;align-items:center}"
+        ".tape-scroll-area::before,.tape-scroll-area::after{"
+            "content:\'\';position:absolute;top:0;bottom:0;width:40px;z-index:2;pointer-events:none}"
+        ".tape-scroll-area::before{"
+            "left:0;background:linear-gradient(90deg,rgba(8,12,20,0.95),transparent)}"
+        ".tape-scroll-area::after{"
+            "right:0;background:linear-gradient(-90deg,rgba(8,12,20,0.95),transparent)}"
         ".ticker-tape-track{"
-        "display:flex;align-items:center;white-space:nowrap;"
-        "animation:tickerScroll " + str(dur) + "s linear infinite;"
-        "will-change:transform}"
+            "display:flex;align-items:center;white-space:nowrap;"
+            "animation:tickerScroll " + str(dur) + "s linear infinite;"
+            "will-change:transform}"
         ".ticker-tape-track:hover{animation-play-state:paused}"
         ".tape-item{"
-        "display:inline-flex;align-items:center;gap:6px;"
-        "padding:0 20px;border-right:1px solid rgba(62,207,142,0.04);cursor:default}"
+            "display:inline-flex;align-items:center;gap:6px;"
+            "padding:0 18px;border-right:1px solid rgba(62,207,142,0.04);"
+            "cursor:pointer;text-decoration:none;transition:background .2s}"
+        ".tape-item:hover{background:rgba(62,207,142,0.05)}"
         ".tape-sym{font-family:JetBrains Mono,monospace;font-weight:700;font-size:.7rem;"
-        "color:#e2e8f0;letter-spacing:.02em}"
+            "color:#e2e8f0;letter-spacing:.02em}"
         ".tape-px{font-family:JetBrains Mono,monospace;font-weight:500;font-size:.68rem;color:#8b95a8}"
         ".tape-chg{font-family:JetBrains Mono,monospace;font-weight:600;font-size:.65rem}"
         "header[data-testid=stHeader]{"
-        "background:transparent!important;height:36px!important;z-index:998!important}"
+            "background:transparent!important;height:36px!important;z-index:998!important}"
         ".block-container{padding-top:3.5rem!important}"
-        "section[data-testid=stSidebar]{top:36px!important}"
+        "section[data-testid=stSidebar]{top:36px!important;z-index:1001!important}"
+        "button[data-testid=stSidebarCollapsedControl],"
+        "button[data-testid=baseButton-headerNoPadding],"
+        "[data-testid=collapsedControl]{z-index:1002!important;position:relative}"
         "@media(max-width:768px){"
-        ".ticker-tape-wrap{height:30px}"
-        ".tape-item{padding:0 12px;gap:4px}"
-        ".tape-sym{font-size:.6rem}.tape-px{font-size:.58rem}.tape-chg{font-size:.55rem}"
-        "header[data-testid=stHeader]{height:30px!important}"
-        "section[data-testid=stSidebar]{top:30px!important}"
-        ".block-container{padding-top:3rem!important}}"
+            ".ticker-tape-wrap{height:30px}"
+            ".tape-static{display:none}"
+            ".tape-item{padding:0 12px;gap:4px}"
+            ".tape-sym{font-size:.6rem}.tape-px{font-size:.58rem}.tape-chg{font-size:.55rem}"
+            "header[data-testid=stHeader]{height:30px!important}"
+            "section[data-testid=stSidebar]{top:30px!important}"
+            ".block-container{padding-top:3rem!important}}"
         "</style>"
     )
 
-
 def render_ticker_tape():
-    all_tickers = _build_tape_list()
+    etfs, rolling = _build_tape_list()
+    all_tickers = etfs + rolling
     quotes = _fetch_quotes(tuple(all_tickers))
 
-    items = []
-    for t in all_tickers:
-        q = quotes.get(t)
-        if q:
-            color = "#3ecf8e" if q["chg"] >= 0 else "#f85149"
-            arrow = "&#9650;" if q["chg"] >= 0 else "&#9660;"
-            glow = "rgba(62,207,142,0.3)" if q["chg"] >= 0 else "rgba(248,81,73,0.3)"
-            items.append(
-                '<div class="tape-item">'
-                + '<span class="tape-sym">' + t + "</span>"
-                + '<span class="tape-px">' + "{:,.2f}".format(q["price"]) + "</span>"
-                + '<span class="tape-chg" style="color:' + color
-                + ";text-shadow:0 0 8px " + glow + '">'
-                + arrow + " " + "{:+.2f}".format(q["chg"])
-                + " (" + "{:+.2f}%".format(q["pct"]) + ")</span>"
-                + "</div>"
-            )
-        else:
-            items.append(
-                '<div class="tape-item">'
-                + '<span class="tape-sym">' + t + "</span>"
-                + '<span class="tape-px" style="color:#3d4655">&mdash;</span>'
-                + "</div>"
-            )
+    static_html = ""
+    for t in etfs:
+        static_html += _item_html(t, quotes.get(t))
 
-    strip = "".join(items)
-    track = strip + strip
-    dur = max(30, len(all_tickers) * 4)
+    rolling_html = ""
+    for t in rolling:
+        rolling_html += _item_html(t, quotes.get(t))
+
+    scroll_strip = rolling_html + rolling_html
+    dur = max(25, len(rolling) * 4)
 
     return (
         _tape_css(dur)
         + '<div class="ticker-tape-wrap">'
+        + '<div class="tape-static">' + static_html + "</div>"
+        + '<div class="tape-scroll-area">'
         + '<div class="ticker-tape-track">'
-        + track
-        + "</div></div>"
+        + scroll_strip
+        + "</div></div></div>"
     )
