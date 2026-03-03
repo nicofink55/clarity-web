@@ -20,9 +20,275 @@ from engine import (
     SECTOR_NAMES, SCENARIOS, BETAS,
 )
 
+import sqlite3
+from datetime import datetime, timedelta
+
 from PIL import Image as _PILImage
 _favicon = _PILImage.open(os.path.join(os.path.dirname(__file__), "favicon.png"))
 st.set_page_config(page_title="Clarity — Equity Valuation Engine", page_icon=_favicon, layout="wide", initial_sidebar_state="collapsed")
+
+# ════════════════════════════════════════
+#  TICKER TAPE — Analytics + Quotes
+# ════════════════════════════════════════
+
+_TICKER_DB_PATH = os.path.join(os.path.dirname(__file__), "ticker_analytics.db")
+_STATIC_ETFS = ["SPY", "QQQ", "DIA", "IWM"]
+_BASELINE_TICKERS = ["NVDA", "GOOGL", "MSFT", "META", "AVGO", "V"]
+_TAPE_ROLLING_SLOTS = 8  # max rolling tickers beyond the 4 ETFs
+
+def _init_ticker_db():
+    """Create the analytics table if it doesn't exist."""
+    conn = sqlite3.connect(_TICKER_DB_PATH)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS ticker_searches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL,
+            searched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ticker_time ON ticker_searches(searched_at)")
+    conn.commit()
+    conn.close()
+
+def log_ticker_search(ticker: str):
+    """Record a ticker search event."""
+    try:
+        _init_ticker_db()
+        conn = sqlite3.connect(_TICKER_DB_PATH)
+        conn.execute("INSERT INTO ticker_searches (ticker, searched_at) VALUES (?, ?)",
+                     (ticker.upper(), datetime.utcnow().isoformat()))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+def get_trending_tickers(window_hours=24, limit=8):
+    """Get the most-searched tickers in the last N hours."""
+    try:
+        _init_ticker_db()
+        conn = sqlite3.connect(_TICKER_DB_PATH)
+        cutoff = (datetime.utcnow() - timedelta(hours=window_hours)).isoformat()
+        rows = conn.execute("""
+            SELECT ticker, COUNT(*) as cnt
+            FROM ticker_searches
+            WHERE searched_at >= ?
+            GROUP BY ticker
+            ORDER BY cnt DESC
+            LIMIT ?
+        """, (cutoff, limit)).fetchall()
+        conn.close()
+        return [r[0] for r in rows]
+    except Exception:
+        return []
+
+def _build_tape_tickers():
+    """Merge static ETFs + trending (24h) + baseline fallbacks."""
+    trending = get_trending_tickers(window_hours=24, limit=_TAPE_ROLLING_SLOTS)
+    # Remove any ETFs from trending (they're always shown)
+    trending = [t for t in trending if t not in _STATIC_ETFS]
+    # Fill remaining slots with baseline tickers not already present
+    seen = set(_STATIC_ETFS + trending)
+    for bt in _BASELINE_TICKERS:
+        if len(trending) >= _TAPE_ROLLING_SLOTS:
+            break
+        if bt not in seen:
+            trending.append(bt)
+            seen.add(bt)
+    return _STATIC_ETFS, trending
+
+@st.cache_data(ttl=90)
+def _fetch_tape_quotes(tickers_tuple):
+    """Fetch current price + daily change for a list of tickers. Cached 90s."""
+    quotes = {}
+    try:
+        import yfinance as yf
+        data = yf.download(list(tickers_tuple), period="2d", group_by="ticker",
+                           progress=False, threads=True)
+        for t in tickers_tuple:
+            try:
+                if len(tickers_tuple) == 1:
+                    df = data
+                else:
+                    df = data[t]
+                if df is None or df.empty or len(df) < 1:
+                    continue
+                # Flatten MultiIndex columns if present
+                if hasattr(df.columns, 'levels') and df.columns.nlevels > 1:
+                    df.columns = df.columns.get_level_values(-1)
+                close_col = 'Close' if 'Close' in df.columns else 'Adj Close' if 'Adj Close' in df.columns else None
+                if close_col is None:
+                    continue
+                current = float(df[close_col].iloc[-1])
+                if len(df) >= 2:
+                    prev = float(df[close_col].iloc[-2])
+                    chg = current - prev
+                    pct = (chg / prev) * 100 if prev != 0 else 0
+                else:
+                    chg = 0
+                    pct = 0
+                quotes[t] = {"price": current, "chg": chg, "pct": pct}
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return quotes
+
+def _render_ticker_tape():
+    """Generate the HTML/CSS for the scrolling ticker tape in the header bar."""
+    static_etfs, rolling = _build_tape_tickers()
+    all_tickers = static_etfs + rolling
+    quotes = _fetch_tape_quotes(tuple(all_tickers))
+
+    # Build individual ticker items
+    items_html = ""
+    for t in all_tickers:
+        q = quotes.get(t)
+        if q:
+            price_str = f"{q['price']:,.2f}"
+            chg_str = f"{q['chg']:+.2f}"
+            pct_str = f"{q['pct']:+.2f}%"
+            is_positive = q['chg'] >= 0
+            color = "#3ecf8e" if is_positive else "#f85149"
+            arrow = "▲" if is_positive else "▼"
+            glow = f"0 0 8px {'rgba(62,207,142,0.3)' if is_positive else 'rgba(248,81,73,0.3)'}"
+            # ETFs get a subtle badge
+            etf_badge = ""
+            if t in _STATIC_ETFS:
+                etf_badge = ""  # ETFs blend in, no special badge needed
+            items_html += f'''
+            <div class="tape-item">
+                <span class="tape-symbol">{t}</span>
+                <span class="tape-price">{price_str}</span>
+                <span class="tape-change" style="color:{color};text-shadow:{glow}">
+                    {arrow} {chg_str} ({pct_str})
+                </span>
+            </div>'''
+        else:
+            items_html += f'''
+            <div class="tape-item">
+                <span class="tape-symbol">{t}</span>
+                <span class="tape-price" style="color:#3d4655">—</span>
+            </div>'''
+
+    # Duplicate for seamless loop
+    tape_content = items_html + items_html
+
+    # Estimate animation duration based on item count
+    n_items = len(all_tickers)
+    duration = max(30, n_items * 4)  # ~4s per ticker
+
+    return f'''
+    <style>
+        /* ── Ticker Tape ── */
+        @keyframes tickerScroll {{
+            0% {{ transform: translateX(0); }}
+            100% {{ transform: translateX(-50%); }}
+        }}
+        .ticker-tape-wrap {{
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 36px;
+            background: linear-gradient(180deg, rgba(8,12,20,0.95) 0%, rgba(8,12,20,0.85) 100%);
+            border-bottom: 1px solid rgba(62,207,142,0.06);
+            z-index: 999;
+            overflow: hidden;
+            backdrop-filter: blur(12px);
+            display: flex;
+            align-items: center;
+        }}
+        /* Fade edges */
+        .ticker-tape-wrap::before,
+        .ticker-tape-wrap::after {{
+            content: '';
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 60px;
+            z-index: 2;
+            pointer-events: none;
+        }}
+        .ticker-tape-wrap::before {{
+            left: 0;
+            background: linear-gradient(90deg, rgba(8,12,20,0.95), transparent);
+        }}
+        .ticker-tape-wrap::after {{
+            right: 0;
+            background: linear-gradient(-90deg, rgba(8,12,20,0.95), transparent);
+        }}
+        .ticker-tape-track {{
+            display: flex;
+            align-items: center;
+            white-space: nowrap;
+            animation: tickerScroll {duration}s linear infinite;
+            will-change: transform;
+        }}
+        .ticker-tape-track:hover {{
+            animation-play-state: paused;
+        }}
+        .tape-item {{
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 0 20px;
+            border-right: 1px solid rgba(62,207,142,0.04);
+            cursor: default;
+        }}
+        .tape-symbol {{
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            font-size: 0.7rem;
+            color: #e2e8f0;
+            letter-spacing: 0.02em;
+        }}
+        .tape-price {{
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 500;
+            font-size: 0.68rem;
+            color: #8b95a8;
+        }}
+        .tape-change {{
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            font-size: 0.65rem;
+            letter-spacing: -0.01em;
+        }}
+
+        /* ── Push page content below the tape ── */
+        .block-container {{
+            padding-top: 3.5rem !important;
+        }}
+        /* ── Also push sidebar below tape ── */
+        section[data-testid="stSidebar"] {{
+            top: 36px !important;
+        }}
+        /* ── Hide default Streamlit header behind tape ── */
+        header[data-testid="stHeader"] {{
+            background: transparent !important;
+            height: 36px !important;
+            z-index: 998 !important;
+        }}
+
+        /* ── Mobile: smaller tape ── */
+        @media (max-width: 768px) {{
+            .ticker-tape-wrap {{ height: 30px; }}
+            .tape-item {{ padding: 0 12px; gap: 4px; }}
+            .tape-symbol {{ font-size: 0.6rem; }}
+            .tape-price {{ font-size: 0.58rem; }}
+            .tape-change {{ font-size: 0.55rem; }}
+            header[data-testid="stHeader"] {{ height: 30px !important; }}
+            section[data-testid="stSidebar"] {{ top: 30px !important; }}
+            .block-container {{ padding-top: 3rem !important; }}
+        }}
+    </style>
+
+    <div class="ticker-tape-wrap">
+        <div class="ticker-tape-track">
+            {tape_content}
+        </div>
+    </div>
+    '''
 
 # ════════════════════════════════════════
 #  THEME & CSS
@@ -58,7 +324,6 @@ st.markdown("""
     h1,h2,h3 { color: #e2e8f0 !important; font-family: Inter,sans-serif !important; }
     .stMarkdown p, .stMarkdown li { color: #8b95a8; font-family: Inter,sans-serif; }
     #MainMenu, footer { visibility: hidden; }
-    .block-container { padding-top: 2.5rem !important; }
 
     /* ── Z-index layering for neural bg ── */
     .stApp > * { position: relative; z-index: 1; }
@@ -412,6 +677,8 @@ if(n.r>1.5){ctx.beginPath();ctx.arc(n.x,n.y,n.r+4,0,Math.PI*2);ctx.fillStyle='rg
 ">
 """, unsafe_allow_html=True)
 
+# ── Ticker Tape ──
+st.markdown(_render_ticker_tape(), unsafe_allow_html=True)
 
 
 # ════════════════════════════════════════
@@ -520,6 +787,7 @@ def quick_run(ticker_val, form="10-K"):
     """Pull filing + market data + run valuation in one shot."""
     st.session_state.ticker = ticker_val
     st.session_state.dcf_result = None
+    log_ticker_search(ticker_val)  # Track for ticker tape trending
     cik, name = lookup_cik(ticker_val)
     st.session_state.company_name = name
     info = find_filing(cik, form)
@@ -622,6 +890,7 @@ with st.sidebar:
     if pull_submitted and ticker_input:
         st.session_state.ticker = ticker_input
         st.session_state.dcf_result = None
+        log_ticker_search(ticker_input)  # Track for ticker tape trending
         progress = st.empty()
         status = st.empty()
         try:
