@@ -379,6 +379,34 @@ def track_valuation(ticker, company, sector, fv, price, upside, verdict, source=
         threading.Thread(target=_send, daemon=True).start()
     except: pass
 
+def _format_eastern_time():
+    """Format current time in US Eastern (ET) for display.
+    Handles EST/EDT offset from UTC without requiring pytz."""
+    from datetime import datetime, timezone, timedelta
+    utc_now = datetime.now(timezone.utc)
+    # Approximate US Eastern: UTC-5 (EST) or UTC-4 (EDT)
+    # EDT runs from 2nd Sunday of March to 1st Sunday of November
+    year = utc_now.year
+    # Find 2nd Sunday of March
+    mar1 = datetime(year, 3, 1, tzinfo=timezone.utc)
+    mar_second_sun = 14 - mar1.weekday() if mar1.weekday() <= 6 else 7 - mar1.weekday() + 7
+    mar_second_sun = mar1.replace(day=mar_second_sun if mar_second_sun <= 14 else mar_second_sun - 7)
+    # Simpler: 2nd Sunday = day (14 - (weekday of March 1) % 7)
+    dow = mar1.weekday()  # Monday=0
+    first_sun = (6 - dow) % 7 + 1  # first Sunday
+    second_sun = first_sun + 7
+    edt_start = datetime(year, 3, second_sun, 2, 0, tzinfo=timezone.utc)  # 2 AM UTC on 2nd Sunday
+    # Find 1st Sunday of November
+    nov1 = datetime(year, 11, 1, tzinfo=timezone.utc)
+    dow_nov = nov1.weekday()
+    first_sun_nov = (6 - dow_nov) % 7 + 1
+    edt_end = datetime(year, 11, first_sun_nov, 2, 0, tzinfo=timezone.utc)
+    is_edt = edt_start <= utc_now < edt_end
+    offset = timedelta(hours=-4) if is_edt else timedelta(hours=-5)
+    tz_label = "EDT" if is_edt else "EST"
+    eastern = utc_now + offset
+    return eastern.strftime(f"%b %d, %Y · %I:%M %p {tz_label}")
+
 def quick_run(ticker_val, form="10-K"):
     """Pull filing + market data + run valuation in one shot."""
     st.session_state.ticker = ticker_val
@@ -389,8 +417,8 @@ def quick_run(ticker_val, form="10-K"):
     st.session_state.filing_info = f"{info.get('form', form)} · Filed {info.get('date', '?')}"
     with tempfile.TemporaryDirectory() as tmpdir:
         path, size = download_filing(info, tmpdir)
-        if path.lower().endswith('.pdf'): st.session_state.fins = parse_pdf(path)
-        else: st.session_state.fins = parse_html(path)
+        if path.lower().endswith('.pdf'): st.session_state.fins = parse_pdf(path, ticker=ticker_val)
+        else: st.session_state.fins = parse_html(path, ticker=ticker_val)
     st.session_state.sector = st.session_state.fins.get('_sector', 'general')
     st.session_state.data_quality = {'quarters_available': 1}
     st.session_state.filing_loaded = True
@@ -399,7 +427,7 @@ def quick_run(ticker_val, form="10-K"):
     st.session_state.shares_mil = data['shares_mil']
     st.session_state.company_name = data.get('name', ticker_val)
     st.session_state.beta = data.get('beta')
-    st.session_state.price_ts = time.strftime("%b %d, %Y · %I:%M %p", time.localtime())
+    st.session_state.price_ts = _format_eastern_time()
     try:
         live_comps = fetch_live_comps(st.session_state.sector, log_fn=lambda m, t: log(m, t))
         if live_comps: st.session_state.fins['_live_comps'] = live_comps
@@ -493,8 +521,8 @@ with st.sidebar:
                 with tempfile.TemporaryDirectory() as tmpdir:
                     path, size = download_filing(info, tmpdir)
                     progress.progress(60, "Parsing...")
-                    if path.lower().endswith('.pdf'): st.session_state.fins = parse_pdf(path)
-                    else: st.session_state.fins = parse_html(path)
+                    if path.lower().endswith('.pdf'): st.session_state.fins = parse_pdf(path, ticker=ticker_input)
+                    else: st.session_state.fins = parse_html(path, ticker=ticker_input)
                 sector = st.session_state.fins.get('_sector', 'general')
                 st.session_state.sector = sector
                 st.session_state.data_quality = {'quarters_available': 1}
@@ -517,7 +545,7 @@ with st.sidebar:
                         st.session_state.shares_mil = filing_shares
                         log(f"Shares corrected: {data['shares_mil']:.0f}M → {filing_shares:.0f}M", "warn")
                 log(f"Market: ${data['price']:.2f} | {st.session_state.shares_mil:.1f}M shares", "ok")
-                st.session_state.price_ts = time.strftime("%b %d, %Y · %I:%M %p", time.localtime())
+                st.session_state.price_ts = _format_eastern_time()
             except Exception as e:
                 log(f"Market data failed: {e}", "warn")
                 status.warning(f"Market data failed: {e}")
@@ -553,8 +581,9 @@ with st.sidebar:
             try:
                 with tempfile.NamedTemporaryFile(suffix=os.path.splitext(uploaded.name)[1], delete=False) as tmp:
                     tmp.write(uploaded.read()); tmp_path = tmp.name
-                if tmp_path.lower().endswith('.pdf'): st.session_state.fins = parse_pdf(tmp_path)
-                else: st.session_state.fins = parse_html(tmp_path)
+                _upload_ticker = infer_ticker(tmp_path) or st.session_state.ticker or None
+                if tmp_path.lower().endswith('.pdf'): st.session_state.fins = parse_pdf(tmp_path, ticker=_upload_ticker)
+                else: st.session_state.fins = parse_html(tmp_path, ticker=_upload_ticker)
                 os.unlink(tmp_path)
                 st.session_state.sector = st.session_state.fins.get('_sector', 'general')
                 st.session_state.filing_loaded = True
@@ -710,7 +739,7 @@ if mm and mm.get('blended_fv'):
 else:
     fv = r.get('pw_fv', 0); upside = r.get('pw_up', 0); verdict = r.get('verdict', 'HOLD')
 
-verdict_class = "buy" if "BUY" in verdict else "sell" if "SELL" in verdict else "hold"
+verdict_class = "buy" if "UNDERVALUED" in verdict else "sell" if "OVERVALUED" in verdict else "hold"
 mc = mm.get('monte_carlo') if mm else None
 ticker = st.session_state.ticker or "—"
 company = st.session_state.company_name or ""
@@ -774,7 +803,7 @@ with c4:
     prob_style = "green" if prob >= 60 else "amber" if prob >= 40 else "red"
     st.markdown(card("P(Upside)", f"{prob:.0f}%" if prob else "—", f"{mc.get('iterations',5000):,} sims" if mc else "", prob_style), unsafe_allow_html=True)
 with c5:
-    st.markdown(f'<div class="metric-card verdict-{verdict_class}" style="background:{"rgba(62,207,142,0.06)" if "BUY" in verdict else "rgba(248,81,73,0.06)" if "SELL" in verdict else "rgba(210,153,34,0.06)"}"><div class="label">Verdict</div><div class="verdict-badge {verdict_class}">{verdict}</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="metric-card verdict-{verdict_class}" style="background:{"rgba(62,207,142,0.06)" if "UNDERVALUED" in verdict else "rgba(248,81,73,0.06)" if "OVERVALUED" in verdict else "rgba(210,153,34,0.06)"}"><div class="label">Verdict</div><div class="verdict-badge {verdict_class}">{verdict}</div></div>', unsafe_allow_html=True)
 
 st.markdown('<div class="shimmer-line"></div>', unsafe_allow_html=True)
 
