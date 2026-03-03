@@ -21,6 +21,13 @@ from engine import (
 )
 
 from ticker_tape import render_ticker_tape, log_ticker_search
+from auth import (
+    init_auth, get_user, get_tier, is_signed_in,
+    can_run_analysis, increment_usage, save_analysis,
+    render_sign_in_modal, render_limit_reached_modal,
+    render_user_header, toggle_watchlist, is_in_watchlist,
+    _AUTH_CSS, POPULAR_TICKERS as AUTH_POPULAR,
+)
 
 from PIL import Image as _PILImage
 _favicon = _PILImage.open(os.path.join(os.path.dirname(__file__), "favicon.png"))
@@ -28,6 +35,9 @@ st.set_page_config(page_title="Clarity — Equity Valuation Engine", page_icon=_
 
 # ── Ticker Tape (must be before CSS block) ──
 st.markdown(render_ticker_tape(), unsafe_allow_html=True)
+
+# ── Auth init (Firebase) ──
+init_auth()
 
 # ════════════════════════════════════════
 #  THEME & CSS
@@ -576,13 +586,18 @@ qp = st.query_params
 if qp.get("ticker") and not st.session_state.auto_loaded and not st.session_state.dcf_result:
     t = qp["ticker"].upper().strip()
     if t:
-        st.session_state.auto_loaded = True
-        try:
-            with st.spinner(f"Loading {t}..."):
-                quick_run(t)
-            st.rerun()
-        except Exception as e:
-            st.error(f"Could not load {t}: {e}")
+        allowed_qp, reason_qp = can_run_analysis(t)
+        if not allowed_qp:
+            st.session_state.auto_loaded = True  # prevent loop
+            # Will show sign-in or limit modal on landing page
+        else:
+            st.session_state.auto_loaded = True
+            try:
+                with st.spinner(f"Loading {t}..."):
+                    quick_run(t)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Could not load {t}: {e}")
 
 def run_valuation():
     fins = st.session_state.fins
@@ -788,6 +803,8 @@ if not st.session_state.dcf_result:
         st.info("Filing loaded. Click **Run Valuation** in the sidebar.")
     else:
         # ── LANDING PAGE ──
+        # Auth: show user pill or sign-in button
+        st.markdown(_AUTH_CSS + '<div style="position:fixed;top:44px;right:24px;z-index:998">' + render_user_header() + '</div>', unsafe_allow_html=True)
         st.markdown("""
         <div style="text-align:center;padding:60px 20px 0">
             <div style="display:inline-flex;align-items:center;gap:14px;margin-bottom:20px">
@@ -815,14 +832,21 @@ if not st.session_state.dcf_result:
                 search_go = st.form_submit_button("Analyze", use_container_width=True, type="primary")
 
         if search_go and search_ticker:
-            try:
-                with st.spinner(f"Analyzing {search_ticker}..."):
-                    quick_run(search_ticker, form=search_form)
-                st.query_params["ticker"] = search_ticker
-                st.session_state.auto_loaded = True
-                st.rerun()
-            except Exception as e:
-                st.error(f"Could not load {search_ticker}: {e}")
+            allowed, reason = can_run_analysis(search_ticker)
+            if not allowed and reason == "sign_in":
+                render_sign_in_modal()
+            elif not allowed and reason == "limit_reached":
+                render_limit_reached_modal()
+            else:
+                try:
+                    with st.spinner(f"Analyzing {search_ticker}..."):
+                        quick_run(search_ticker, form=search_form)
+                    st.query_params["ticker"] = search_ticker
+                    st.session_state.auto_loaded = True
+                    log_ticker_search(search_ticker)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Could not load {search_ticker}: {e}")
 
         # ── Featured tickers ──
         st.markdown('<div style="text-align:center;margin-top:28px;margin-bottom:8px;color:#3d4655;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.12em;font-family:Inter,sans-serif">Popular tickers</div>', unsafe_allow_html=True)
@@ -831,14 +855,20 @@ if not st.session_state.dcf_result:
         for i, t in enumerate(featured):
             with feat_cols[i]:
                 if st.button(t, key=f"feat_{t}", use_container_width=True):
-                    try:
-                        with st.spinner(f"Loading {t}..."):
-                            quick_run(t)
-                        st.query_params["ticker"] = t
-                        st.session_state.auto_loaded = True
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error: {e}")
+                    allowed_f, reason_f = can_run_analysis(t)
+                    if not allowed_f and reason_f == "sign_in":
+                        render_sign_in_modal()
+                    elif not allowed_f and reason_f == "limit_reached":
+                        render_limit_reached_modal()
+                    else:
+                        try:
+                            with st.spinner(f"Loading {t}..."):
+                                quick_run(t)
+                            st.query_params["ticker"] = t
+                            st.session_state.auto_loaded = True
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error: {e}")
 
         # ── How it works ──
         st.markdown("""
@@ -901,6 +931,14 @@ if st.session_state.get('_last_tracked') != track_key:
     track_valuation(ticker, company, SECTOR_NAMES.get(sector, sector), fv, price, upside, verdict, source)
     st.session_state['_last_tracked'] = track_key
 
+# ── Auth: user pill + save on results page ──
+st.markdown(_AUTH_CSS + '<div style="position:fixed;top:44px;right:24px;z-index:998">' + render_user_header() + '</div>', unsafe_allow_html=True)
+# Auto-save analysis for signed-in users
+if is_signed_in() and not st.session_state.get("_analysis_saved"):
+    save_analysis(ticker, {"fair_value": fv, "price": price, "verdict": verdict,
+                           "sector": sector, "upside_pct": upside})
+    st.session_state["_analysis_saved"] = True
+
 # ── Header ──
 display_name = company if company and company.upper() != ticker else ""
 filing_info = st.session_state.filing_info or ""
@@ -918,7 +956,7 @@ sector_name = SECTOR_NAMES.get(sector, sector)
 confidence = st.session_state.fins.get('_sector_conf', 'medium') if st.session_state.fins else 'medium'
 conf_color = '#3ecf8e' if confidence == 'high' else '#d29922' if confidence == 'medium' else '#f85149'
 conf_icon = '✓' if confidence == 'high' else '⚠' if confidence == 'medium' else '⚠'
-sv1, sv2, sv3, sv4 = st.columns([3, 2, 1, 1])
+sv1, sv2, sv3, sv4, sv5 = st.columns([3, 2, 1, 1, 1])
 with sv1:
     st.markdown(f'<div style="display:flex;align-items:center;gap:8px;padding:4px 0"><span style="color:{conf_color};font-size:0.75rem">{conf_icon}</span><span style="color:#8b95a8;font-size:0.78rem;font-family:Inter,sans-serif">Classified as <strong style="color:#c0c8d8">{sector_name}</strong></span><span style="color:#3d4655;font-size:0.65rem;font-family:Inter,sans-serif">({confidence} confidence)</span></div>', unsafe_allow_html=True)
 with sv2:
@@ -937,11 +975,20 @@ with sv3:
             st.error(f"Error: {e}")
 with sv4:
     if st.button("\u2190 New Analysis", key="new_analysis_top", use_container_width=True):
-        for k in ['fins', 'dcf_result', 'ticker', 'price', 'shares_mil', 'sector', 'beta',
+        for k in ['fins', 'dcf_result', 'ticker', 'price', 'shares_mil', 'sector', 'beta', '_analysis_saved',
                    'company_name', 'filing_loaded', 'auto_loaded', 'filing_info', 'price_ts']:
             if k in st.session_state: del st.session_state[k]
         st.query_params.clear()
         st.rerun()
+with sv5:
+    if is_signed_in():
+        wl_label = "\u2605 Saved" if is_in_watchlist(ticker) else "\u2606 Watch"
+        if st.button(wl_label, key="watchlist_btn", use_container_width=True):
+            toggle_watchlist(ticker)
+            st.rerun()
+    else:
+        if st.button("\u2606 Watch", key="watchlist_btn", use_container_width=True):
+            render_sign_in_modal()
 if new_sec != sector:
     st.markdown(f'<div style="color:#d29922;font-size:0.72rem;font-family:Inter,sans-serif;margin:-4px 0 4px">Sector changed to {SECTOR_NAMES.get(new_sec, new_sec)} — click <strong>Re-run</strong> to update valuation</div>', unsafe_allow_html=True)
 
@@ -1368,7 +1415,7 @@ with ft1:
     ''', height=45)
 with ft3:
     if st.button("← New Analysis", key="new_analysis"):
-        for k in ['fins', 'dcf_result', 'ticker', 'price', 'shares_mil', 'sector', 'beta',
+        for k in ['fins', 'dcf_result', 'ticker', 'price', 'shares_mil', 'sector', 'beta', '_analysis_saved',
                    'company_name', 'filing_loaded', 'auto_loaded', 'filing_info', 'price_ts']:
             if k in st.session_state: del st.session_state[k]
         st.query_params.clear()
