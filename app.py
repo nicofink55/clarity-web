@@ -790,25 +790,45 @@ if new_sec != sector:
 
 # ── Top metric cards ──
 price_sub = st.session_state.price_ts if st.session_state.price_ts else ""
-c1, c2, c3, c4, c5 = st.columns(5, gap="small")
+
+# Compute 1-year price target from DCF price paths
+pp_top = r.get('price_paths')
+pt_1y = None
+if pp_top and pp_top.get('pw_path') and len(pp_top['pw_path']) > 1:
+    pw_raw = pp_top['pw_path']
+    # Scale factor: align DCF path to blended FV (same logic as chart)
+    dcf_start = pw_raw[0]
+    if dcf_start > 0 and fv > 0:
+        sf_top = fv / dcf_start
+        pt_1y = pw_raw[1] * sf_top
+    else:
+        pt_1y = pw_raw[1]
+
+c1, c2, c3, c4, c5, c6 = st.columns(6, gap="small")
 with c1:
     st.markdown(card("Fair Value", f"${fv:,.2f}", f"{upside:+.1f}%", "green" if upside >= 0 else "red", glow=True), unsafe_allow_html=True)
 with c2:
-    st.markdown(card("Market Price", f"${price:,.2f}", price_sub, "white"), unsafe_allow_html=True)
+    if pt_1y and pt_1y > 0:
+        pt_up = (pt_1y - price) / price * 100 if price > 0 else 0
+        st.markdown(card("1Y Price Target", f"${pt_1y:,.2f}", f"{pt_up:+.1f}%", "green" if pt_up >= 0 else "red"), unsafe_allow_html=True)
+    else:
+        st.markdown(card("1Y Price Target", "—", "", "white"), unsafe_allow_html=True)
 with c3:
+    st.markdown(card("Market Price", f"${price:,.2f}", price_sub, "white"), unsafe_allow_html=True)
+with c4:
     rf_live = fetch_risk_free_rate()
     st.markdown(card("WACC", f"{r.get('wacc',0)*100:.2f}%", f"Rf {rf_live*100:.2f}%", "white"), unsafe_allow_html=True)
-with c4:
+with c5:
     prob = mc.get('prob_above_price', 0) if mc else 0
     prob_style = "green" if prob >= 60 else "amber" if prob >= 40 else "red"
-    st.markdown(card("P(Upside)", f"{prob:.0f}%" if prob else "—", f"{mc.get('iterations',5000):,} sims" if mc else "", prob_style), unsafe_allow_html=True)
-with c5:
+    st.markdown(card("P(Upside)", f"{prob:.0f}%" if prob else "—", f"DCF Monte Carlo" if mc else "", prob_style), unsafe_allow_html=True)
+with c6:
     st.markdown(f'<div class="metric-card verdict-{verdict_class}" style="background:{"rgba(62,207,142,0.06)" if "UNDERVALUED" in verdict else "rgba(248,81,73,0.06)" if "OVERVALUED" in verdict else "rgba(210,153,34,0.06)"}"><div class="label">Verdict</div><div class="verdict-badge {verdict_class}">{verdict}</div></div>', unsafe_allow_html=True)
 
 st.markdown('<div class="shimmer-line"></div>', unsafe_allow_html=True)
 
 # ── TABS ──
-tab_overview, tab_models, tab_scenarios, tab_financials, tab_context = st.tabs(["📈 Overview", "🔬 Models", "🎯 Scenarios", "📋 Financials", "🌐 Market Context"])
+tab_overview, tab_models, tab_scenarios, tab_financials, tab_context = st.tabs(["Overview", "Models", "Scenarios", "Financials", "Market Context"])
 
 
 # ─────────────────────────────────
@@ -850,36 +870,39 @@ with tab_overview:
             showlegend=False, hoverinfo='skip'))
         # Fair value line (main)
         fig.add_trace(go.Scatter(x=years, y=pw_s, mode='lines+markers', name='Fair Value',
-            line=dict(color='#3ecf8e', width=2.5, shape='spline', smoothing=1.2),
-            marker=dict(size=5, color='#3ecf8e', line=dict(width=1.5, color='#0a1018')),
+            line=dict(color='#3ecf8e', width=3, shape='spline', smoothing=1.2),
+            marker=dict(size=7, color='#3ecf8e', line=dict(width=2, color='#0a1018')),
             hovertemplate='Year %{x}: $%{y:,.2f}<extra></extra>'))
         # Market price reference
         if mkt_price > 0:
-            fig.add_hline(y=mkt_price, line_dash="dot", line_color="rgba(248,81,73,0.4)", line_width=1,
+            fig.add_hline(y=mkt_price, line_dash="dot", line_color="rgba(248,81,73,0.5)", line_width=1.5,
                           annotation_text=f"Market ${mkt_price:,.0f}",
-                          annotation_font=dict(color="#f85149", size=9, family="JetBrains Mono"),
+                          annotation_font=dict(color="#f85149", size=11, family="JetBrains Mono"),
                           annotation_position="bottom right")
         # Scenario paths (hidden by default)
         sc_colors = ['#22c55e','#3b82f6','#94a3b8','#f59e0b','#ef4444']
+        import re as _re_chart
+        def _strip_emoji_chart(text):
+            return _re_chart.sub(r'^[\U0001f000-\U0001fFFF\u2600-\u26FF\u2700-\u27BF\uFE00-\uFE0F\u200d]+\s*', '', text)
         for i, (sc, sp) in enumerate(zip(pp['scenarios'], scen_s)):
-            fig.add_trace(go.Scatter(x=years, y=sp, mode='lines', name=sc.get('name',''),
-                line=dict(color=sc_colors[i%5], width=1, dash='dot'), opacity=0.4,
+            fig.add_trace(go.Scatter(x=years, y=sp, mode='lines', name=_strip_emoji_chart(sc.get('name','')),
+                line=dict(color=sc_colors[i%5], width=1.5, dash='dot'), opacity=0.5,
                 visible='legendonly',
-                hovertemplate=f"{sc.get('name','')}: $%{{y:,.2f}}<extra></extra>"))
+                hovertemplate=f"{_strip_emoji_chart(sc.get('name',''))}: $%{{y:,.2f}}<extra></extra>"))
 
         fig.update_layout(
             plot_bgcolor='rgba(10,16,24,0.9)', paper_bgcolor='rgba(0,0,0,0)',
-            xaxis=dict(title=None, gridcolor='rgba(62,207,142,0.05)', color='#3d4655', dtick=1,
-                       zeroline=False, showline=True, linecolor='rgba(62,207,142,0.08)', linewidth=1,
-                       tickfont=dict(family='JetBrains Mono', size=10)),
-            yaxis=dict(title=None, gridcolor='rgba(62,207,142,0.05)', color='#3d4655', tickformat='$,.0f',
-                       zeroline=False, showline=True, linecolor='rgba(62,207,142,0.08)', linewidth=1,
-                       tickfont=dict(family='JetBrains Mono', size=10)),
-            legend=dict(font=dict(color='#5a6478', size=9, family='Inter'), bgcolor='rgba(0,0,0,0)',
+            xaxis=dict(title=None, gridcolor='rgba(62,207,142,0.08)', color='#5a6478', dtick=1,
+                       zeroline=False, showline=True, linecolor='rgba(62,207,142,0.1)', linewidth=1,
+                       tickfont=dict(family='JetBrains Mono', size=12)),
+            yaxis=dict(title=None, gridcolor='rgba(62,207,142,0.08)', color='#5a6478', tickformat='$,.0f',
+                       zeroline=False, showline=True, linecolor='rgba(62,207,142,0.1)', linewidth=1,
+                       tickfont=dict(family='JetBrains Mono', size=12)),
+            legend=dict(font=dict(color='#8b95a8', size=11, family='Inter'), bgcolor='rgba(0,0,0,0)',
                        orientation='h', yanchor='bottom', y=1.02, xanchor='center', x=0.5),
-            margin=dict(l=55, r=15, t=8, b=30), height=350, hovermode='x unified',
+            margin=dict(l=60, r=20, t=12, b=35), height=420, hovermode='x unified',
             hoverlabel=dict(bgcolor='rgba(14,20,32,0.95)', bordercolor='rgba(62,207,142,0.15)',
-                           font=dict(family='JetBrains Mono', size=11, color='#e2e8f0')),
+                           font=dict(family='JetBrains Mono', size=12, color='#e2e8f0')),
         )
         st.markdown('<div class="section-card" style="padding:16px 16px 8px 16px">', unsafe_allow_html=True)
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
@@ -918,7 +941,7 @@ with tab_overview:
             </div>
             <div style="color:#475569;font-size:0.7rem;margin-top:4px;font-family:Inter,sans-serif">{mc.get('iterations',5000):,} iterations</div>
         </div>"""
-        st.markdown(f'<div class="section-card"><h4>Monte Carlo Distribution</h4>{mc_html}{prob_html}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="section-card"><h4>Monte Carlo Distribution <span style="color:#475569;font-size:0.7rem;font-weight:400;margin-left:8px">DCF model · {mc.get("iterations",5000):,} iterations</span></h4>{mc_html}{prob_html}</div>', unsafe_allow_html=True)
 
 
 # ─────────────────────────────────
@@ -945,24 +968,6 @@ with tab_models:
 
         st.markdown(f'<div class="section-card"><h4>Multi-Model Triangulation</h4>{html_table(["Model", "Fair Value", "Weight", "vs Price"], table_rows)}</div>', unsafe_allow_html=True)
 
-        # Visual weight breakdown - horizontal stacked bar
-        if active:
-            fig_w = go.Figure()
-            for k in active:
-                w = wts.get(k, 0); v = ind[k]
-                fig_w.add_trace(go.Bar(
-                    y=['Blend'], x=[w*100], orientation='h', name=f"{MN.get(k,k)[:12]}",
-                    marker_color=MC[k], hovertemplate=f"{MN.get(k,k)}: {w*100:.1f}% × ${v:,.0f}<extra></extra>",
-                    text=f"{w*100:.0f}%", textposition='inside', textfont=dict(color='white', size=11, family='JetBrains Mono'),
-                ))
-            fig_w.update_layout(
-                barmode='stack', height=60, showlegend=False,
-                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                xaxis=dict(visible=False), yaxis=dict(visible=False),
-                margin=dict(l=0, r=0, t=0, b=0),
-            )
-            st.plotly_chart(fig_w, use_container_width=True)
-
         # Agreement & EPV
         agree = mm.get('agreement','N/A'); spread = mm.get('spread',0)
         agree_color = "#3ecf8e" if agree == "HIGH" else "#d29922" if agree in ("MODERATE","LOW") else "#f85149"
@@ -983,30 +988,28 @@ with tab_models:
 with tab_scenarios:
     scens = r.get('scenarios', [])
     if scens:
-        # Table
-        table_rows = []
-        for s in scens:
-            if isinstance(s, dict):
-                up_str = color_val(f"{s['upside']:+.1f}%")
-                table_rows.append([s['name'], f'<span class="num">{s["prob"]*100:.0f}%</span>',
-                                   f'<span class="num">${s["fv"]:,.2f}</span>', up_str])
-        st.markdown(f'<div class="section-card"><h4>DCF Scenario Analysis</h4>{html_table(["Scenario", "Probability", "Fair Value", "Upside"], table_rows)}</div>', unsafe_allow_html=True)
-
-        # Horizon-style horizontal scenario bars
+        # Clean scenario bars with inline probabilities (no separate table needed)
         names = [s['name'] for s in scens if isinstance(s, dict)]
         fvs = [s['fv'] for s in scens if isinstance(s, dict)]
         probs = [s['prob'] for s in scens if isinstance(s, dict)]
         max_fv = max(fvs) if fvs else 1
 
+        # Strip emoji prefixes from scenario names for a cleaner look
+        import re as _re
+        def _strip_emoji(text):
+            return _re.sub(r'^[\U0001f000-\U0001fFFF\u2600-\u26FF\u2700-\u27BF\uFE00-\uFE0F\u200d]+\s*', '', text)
+
         bars_html = ''
         for name, fv_val, prob in zip(names, fvs, probs):
+            clean_name = _strip_emoji(name)
             pct = (fv_val / max_fv) * 100
             above = fv_val >= price
             bar_col = 'linear-gradient(90deg, rgba(62,207,142,0.3), rgba(62,207,142,0.6))' if above else 'linear-gradient(90deg, rgba(248,81,73,0.3), rgba(248,81,73,0.6))'
             txt_col = '#3ecf8e' if above else '#f85149'
             up_pct = (fv_val - price) / price * 100 if price > 0 else 0
-            bars_html += f'''<div style="display:grid;grid-template-columns:140px 1fr 90px 70px;align-items:center;gap:12px;margin-bottom:6px">
-                <div style="font-family:Inter,sans-serif;font-size:0.82rem;color:#8b95a8">{name}</div>
+            bars_html += f'''<div style="display:grid;grid-template-columns:160px 50px 1fr 80px 70px;align-items:center;gap:10px;margin-bottom:8px">
+                <div style="font-family:Inter,sans-serif;font-size:0.82rem;color:#c0c8d8;font-weight:500">{clean_name}</div>
+                <div style="font-family:JetBrains Mono,monospace;font-size:0.72rem;color:#64748b;text-align:center">{prob*100:.0f}%</div>
                 <div style="position:relative;height:28px;background:rgba(62,207,142,0.04);border-radius:6px;overflow:hidden">
                     <div style="position:absolute;left:0;top:0;bottom:0;width:{pct:.1f}%;background:{bar_col};border-radius:6px;transition:width 0.6s ease"></div>
                     <div style="position:absolute;left:{min(price/max_fv*100, 98):.1f}%;top:0;bottom:0;width:1px;background:rgba(248,81,73,0.4)"></div>
@@ -1014,18 +1017,12 @@ with tab_scenarios:
                 <div style="font-family:JetBrains Mono,monospace;font-size:0.85rem;font-weight:600;color:#e2e8f0;text-align:right">${fv_val:,.0f}</div>
                 <div style="font-family:JetBrains Mono,monospace;font-size:0.75rem;color:{txt_col};text-align:right">{up_pct:+.0f}%</div>
             </div>'''
-        # Probability row
-        bars_html += '<div style="display:grid;grid-template-columns:140px 1fr 90px 70px;align-items:center;gap:12px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(62,207,142,0.06)">'
-        bars_html += '<div style="color:#3d4655;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.08em;font-family:Inter,sans-serif">Probability</div>'
-        prob_bar = '<div style="display:flex;height:6px;border-radius:3px;overflow:hidden;gap:1px">'
-        p_colors = ['#22c55e','#3b82f6','#94a3b8','#f59e0b','#ef4444']
-        for i, (p, c) in enumerate(zip(probs, p_colors)):
-            prob_bar += f'<div style="width:{p*100:.1f}%;background:{c};border-radius:3px" title="{names[i]}: {p*100:.0f}%"></div>'
-        prob_bar += '</div>'
-        bars_html += f'<div>{prob_bar}</div>'
-        bars_html += f'<div style="color:#3d4655;font-size:0.7rem;font-family:JetBrains Mono,monospace;text-align:right">Mkt ${price:,.0f}</div><div></div></div>'
+        # Market price reference line
+        bars_html += f'<div style="display:grid;grid-template-columns:160px 50px 1fr 80px 70px;align-items:center;gap:10px;margin-top:6px;padding-top:8px;border-top:1px solid rgba(62,207,142,0.06)">'
+        bars_html += f'<div></div><div></div><div></div>'
+        bars_html += f'<div style="color:#64748b;font-size:0.7rem;font-family:JetBrains Mono,monospace;text-align:right">Mkt ${price:,.0f}</div><div></div></div>'
 
-        st.markdown(f'<div class="section-card" style="padding:20px 24px"><h4 style="margin-bottom:14px">Scenario Spectrum</h4>{bars_html}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="section-card" style="padding:20px 24px"><h4 style="margin-bottom:14px">DCF Scenario Analysis</h4>{bars_html}</div>', unsafe_allow_html=True)
 
     # Growth metrics
     tg = r.get('trailing_growth', r.get('trailing'))
@@ -1146,11 +1143,13 @@ with tab_context:
                 cpe = cc.get('current_pe')
                 if cpe:
                     src = cc.get('comps_source', 'static')
-                    rows = [[f'<span class="num">{cpe:.1f}x</span>', f'<span class="num">{cc["sector_pe"]}x</span>', f'<span class="num">${cc["pe_fv"]:,.2f}</span>']]
+                    rows = [['P/E', f'<span class="num">{cpe:.1f}x</span>', f'<span class="num">{cc["sector_pe"]}x</span>', f'<span class="num">${cc["pe_fv"]:,.2f}</span>']]
                     eveb = cc.get('evebitda_fv')
                     if eveb:
-                        rows.append([f'<span class="dim">EV/EBITDA</span>', f'<span class="num">{cc["sector_evebitda"]}x</span>', f'<span class="num">${eveb:,.0f}</span>'])
-                    content = html_table(["P/E", f"Sector ({src})", "Fair Value"], rows)
+                        cur_eveb = cc.get('current_evebitda', '')
+                        cur_eveb_str = f'<span class="num">{cur_eveb:.1f}x</span>' if cur_eveb else '<span class="dim">—</span>'
+                        rows.append(['EV/EBITDA', cur_eveb_str, f'<span class="num">{cc["sector_evebitda"]}x</span>', f'<span class="num">${eveb:,.0f}</span>'])
+                    content = html_table(["Metric", "Current", f"Sector ({src})", "Fair Value"], rows)
                     st.markdown(f'<div class="section-card"><h4>Comparable Companies</h4>{content}</div>', unsafe_allow_html=True)
 
         # Row 2: EV/Revenue + Asset Floor side-by-side

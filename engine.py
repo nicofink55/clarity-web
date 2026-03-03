@@ -4106,6 +4106,89 @@ def _estimate_model_confidence(model_name, fins, sector, data_quality):
     return 0.20
 
 
+def _detect_company_profile(fins, sector, data_quality):
+    """Detect company archetype for model weighting adjustments.
+
+    Returns a dict of adjustment multipliers per model, plus the profile name.
+    Multipliers are applied to raw confidences BEFORE normalization in
+    bayesian_triangulation.  A multiplier of 1.0 = no change.
+
+    Profiles:
+      'standard'                — default, all multipliers 1.0
+      'emerging_profitability'  — thin margins + growth + healthy GP (RELY-type)
+      'pre_profit_growth'       — negative NI + growth + healthy GP
+    """
+    rev = fins.get('revenue', 0) or 0
+    ni = fins.get('net_income', 0) or 0
+    ocf = fins.get('operating_cf', 0) or 0
+    equity = fins.get('stockholders_equity', 0) or 0
+    rev_prior = fins.get('revenue_prior', 0)
+    gp = fins.get('gross_profit', 0) or 0
+
+    net_margin = ni / rev if rev > 0 and ni > 0 else 0
+    gp_margin = gp / rev if rev > 0 and gp > 0 else 0
+    trailing_g = (rev - rev_prior) / rev_prior if rev_prior and rev_prior > 0 else 0
+
+    adjustments = {
+        'dcf': 1.0, 'residual_income': 1.0, 'comps': 1.0,
+        'ev_revenue': 1.0, 'roic_fade': 1.0, 'ddm': 1.0,
+    }
+    profile = 'standard'
+
+    # Sectors where thin net margins are STRUCTURAL (not a growth signal).
+    # Banks earn NIM (2-4%), utilities are regulated, midstream has pass-through revenue.
+    # These should never trigger emerging_profitability — thin margins are their steady state.
+    STRUCTURALLY_THIN_MARGIN_SECTORS = {
+        'bank', 'specialty_lender', 'insurance',  # NIM / underwriting-driven
+        'utility', 'midstream',                     # regulated / pass-through
+    }
+
+    # ── PROFILE: Emerging Profitability ──
+    # Growing revenue, thin but positive margins, healthy unit economics.
+    # Promotes EV/Revenue + DCF, demotes models anchored to current thin earnings.
+    is_emerging_profit = (
+        rev > 0 and
+        ni > 0 and                          # profitable (distinguishes from pre-profit)
+        net_margin < 0.08 and               # but thin margins
+        trailing_g > 0.08 and               # meaningful revenue growth
+        gp_margin >= 0.25 and               # healthy unit economics
+        sector not in STRUCTURALLY_THIN_MARGIN_SECTORS
+    )
+
+    if is_emerging_profit:
+        profile = 'emerging_profitability'
+
+        # Intensity scales continuously with how thin margins are + how fast growth is.
+        # This prevents mild cases (7% margin, 9% growth) from getting the same
+        # boost as extreme cases (2% margin, 30% growth).
+        margin_thinness = max(0, (0.08 - net_margin) / 0.08)  # 0→1 as margin→0
+        growth_strength = min(trailing_g / 0.30, 1.0)          # 0→1 as growth→30%
+        profile_intensity = 0.3 + 0.7 * (margin_thinness * 0.6 + growth_strength * 0.4)
+        profile_intensity = min(profile_intensity, 0.85)  # hard cap: prevent extreme shifts
+
+        # Promote models that handle margin expansion
+        adjustments['ev_revenue'] = 1.0 + 0.8 * profile_intensity    # up to ~1.68x
+        adjustments['dcf'] = 1.0 + 0.2 * profile_intensity           # mild boost (hybrid helps)
+
+        # Demote models anchored to current thin earnings
+        adjustments['residual_income'] = 1.0 - 0.5 * profile_intensity   # down to ~0.575x
+        adjustments['comps'] = 1.0 - 0.3 * profile_intensity             # mild demotion
+        adjustments['roic_fade'] = 1.0 - 0.4 * profile_intensity         # demote (low ROIC on thin margins)
+        adjustments['ddm'] = 1.0 - 0.5 * profile_intensity               # irrelevant for growth
+
+    # ── PROFILE: Pre-Profit Growth ──
+    elif rev > 0 and ni <= 0 and trailing_g > 0.10 and gp_margin > 0.30:
+        profile = 'pre_profit_growth'
+        adjustments['ev_revenue'] = 2.0
+        adjustments['dcf'] = 1.2
+        adjustments['residual_income'] = 0.3
+        adjustments['comps'] = 0.5
+        adjustments['roic_fade'] = 0.3
+        adjustments['ddm'] = 0.2
+
+    return adjustments, profile
+
+
 def bayesian_triangulation(model_outputs, fins, sector, data_quality):
     """Combine valuation estimates via inverse-variance weighting (Yee 2008).
     Returns: (blended_fv, weights_dict, details_dict)
@@ -4119,6 +4202,14 @@ def bayesian_triangulation(model_outputs, fins, sector, data_quality):
 
     confidences = {name: _estimate_model_confidence(name, fins, sector, data_quality)
                    for name in valid}
+
+    # ── Profile-based regime adjustments ──
+    # Modulate raw confidences based on company archetype (e.g. emerging profitability).
+    # Standard profile returns all 1.0 multipliers → no change for typical companies.
+    profile_adj, profile_name = _detect_company_profile(fins, sector, data_quality)
+    confidences = {name: conf * profile_adj.get(name, 1.0)
+                   for name, conf in confidences.items()}
+
     total_conf = sum(confidences.values())
     weights = {name: conf / total_conf for name, conf in confidences.items()}
     blended = sum(valid[name] * weights[name] for name in weights)
@@ -4161,6 +4252,8 @@ def bayesian_triangulation(model_outputs, fins, sector, data_quality):
         'spread': round(spread * 100, 1),
         'individual': {name: round(fv, 2) for name, fv in valid.items()},
         'confidences': {name: round(c, 3) for name, c in confidences.items()},
+        'company_profile': profile_name,
+        'profile_adjustments': {name: round(v, 3) for name, v in profile_adj.items() if name in valid},
     }
     return round(blended, 2), {name: round(w, 3) for name, w in weights.items()}, details
 
