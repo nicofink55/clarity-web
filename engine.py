@@ -186,9 +186,9 @@ def download_and_parse_filings(ticker, form_type="10-Q", count=4, save_dir=None,
         try:
             path, _ = download_filing(info, save_dir)
             if path.lower().endswith('.pdf'):
-                fins = parse_pdf(path)
+                fins = parse_pdf(path, ticker=ticker)
             else:
-                fins = parse_html(path)
+                fins = parse_html(path, ticker=ticker)
             fins['_filing_date'] = info['date']
             fins['_filing_form'] = info['form']
             quarterly_data.append(fins)
@@ -727,6 +727,25 @@ def detect_form(full_text, filename=None):
     if re.search(r'three\s+months?\s+ended', ft): return '10-Q', True
     return '10-K', False
 
+# ── Ticker-based sector overrides (authoritative — skips text detection) ──
+# Use this for companies whose filings contain misleading cross-sector keywords.
+TICKER_SECTOR_OVERRIDE = {
+    # Payment Networks — filings mention "net interest income" etc. but they're not banks
+    'V': 'payment_network', 'MA': 'payment_network', 'AXP': 'payment_network',
+    # Mega-Cap Tech / Hyperscalers — ad revenue + data centers, not banks or SaaS
+    'META': 'hyperscaler', 'GOOGL': 'hyperscaler', 'GOOG': 'hyperscaler',
+    'AMZN': 'hyperscaler', 'MSFT': 'hyperscaler', 'AAPL': 'hyperscaler',
+    'NVDA': 'hyperscaler', 'ORCL': 'hyperscaler', 'NFLX': 'hyperscaler',
+    # Fintech — often mention banking terms but aren't banks
+    'PYPL': 'fintech', 'SQ': 'fintech', 'SOFI': 'fintech', 'AFRM': 'fintech',
+    'COIN': 'fintech',
+    # Banks (explicit)
+    'JPM': 'bank', 'BAC': 'bank', 'WFC': 'bank', 'GS': 'bank', 'MS': 'bank',
+    'C': 'bank', 'USB': 'bank', 'PNC': 'bank', 'SCHW': 'bank', 'TFC': 'bank',
+    # Insurance
+    'BRK-B': 'insurance', 'BRK-A': 'insurance',
+}
+
 SECTOR_RULES = [
     (['net asset value per share','business development company','regulated investment company',
       'investment income','net investment income','total investment income','net increase in net assets',
@@ -781,8 +800,10 @@ SECTOR_RULES = [
     (['payment network','card network','network transaction','credential',
       'acceptance locations','acceptance network','scheme fee','scheme volume',
       'data processing revenue','service revenue','international transaction revenue',
-      'client incentive','visa','mastercard','payment scheme',
-      'cardholder','issuer','acquirer','four-party model'], 'payment_network', 3),
+      'client incentive','visa inc','mastercard','payment scheme',
+      'cardholder','issuer','acquirer','four-party model',
+      'visa u.s.a.','visa international','payments volume','processed transactions',
+      'cross-border volume'], 'payment_network', 3),
     (['payment processing','transaction volume','gross payment volume',
       'payment facilitator','interchange','total payment volume',
       'take rate','merchant','remittance','cross-border','money transfer',
@@ -793,7 +814,12 @@ SECTOR_RULES = [
       'consumer products','brand portfolio','store count','comp sales'], 'consumer', 2),
     (['data center','cloud computing','hyperscal','cloud services','cloud revenue',
       'ai infrastructure','gpu','ai accelerat','optical transceiver',
-      'datacenter','networking segment'], 'hyperscaler', 1.5),
+      'datacenter','networking segment',
+      'advertising revenue','ad impressions','daily active','monthly active people',
+      'family of apps','reality labs','metaverse','instagram','whatsapp',
+      'ad targeting','average price per ad','ad revenue',
+      'youtube','google cloud','search revenue','generative ai',
+      'azure','aws','amazon web services'], 'hyperscaler', 1.5),
     (['semiconductor','wafer','fabrication','backlog','defense contract',
       'industrial equipment','manufacturing capacity','silicon carbide',
       'optoelectronic','photonics','laser'], 'industrial', 1.5),
@@ -807,7 +833,13 @@ SECTOR_NAMES = {
     'insurance':'Insurance / Managed Care','telecom':'Telecom / Media','general':'General',
 }
 
-def detect_sector(full_text):
+def detect_sector(full_text, ticker=None):
+    # ── Ticker override: authoritative, skip text detection entirely ──
+    if ticker:
+        t = ticker.upper().strip()
+        if t in TICKER_SECTOR_OVERRIDE:
+            return TICKER_SECTOR_OVERRIDE[t], 'high'
+
     ft = full_text.lower()
     scores = {}
     for keywords, sector, weight in SECTOR_RULES:
@@ -816,13 +848,29 @@ def detect_sector(full_text):
             count = min(len(re.findall(re.escape(kw), ft, re.IGNORECASE)), 10)
             if count: hits += count
         if hits: scores[sector] = scores.get(sector, 0) + hits * weight
-    # Bank boost: only if genuinely a bank (not a payment network that mentions NII in passing)
-    if 'net interest income' in ft and 'subscription' not in ft:
-        is_payment = any(kw in ft for kw in ['payment network', 'card network', 'visa', 'mastercard',
-                                              'credential', 'acceptance network', 'scheme fee',
-                                              'four-party model', 'payment volume'])
-        if not is_payment:
-            scores['bank'] = scores.get('bank', 0) + 50
+
+    # Bank boost: only if genuinely a bank (not a payment network, fintech, or ad-tech company)
+    if 'net interest income' in ft:
+        # Disqualifiers: terms that indicate the company is NOT a bank
+        non_bank_signals = [
+            'payment network', 'card network', 'visa inc', 'visa u.s.a.', 'mastercard',
+            'credential', 'acceptance network', 'scheme fee', 'four-party model',
+            'payment volume', 'payments volume', 'processed transactions',
+            'advertising revenue', 'ad impressions', 'daily active', 'monthly active',
+            'family of apps', 'reality labs', 'instagram', 'whatsapp', 'youtube',
+            'subscription revenue', 'annual recurring revenue', 'saas',
+            'gross payment volume', 'payment facilitator', 'digital wallet',
+            'buy now, pay later', 'bnpl',
+        ]
+        is_non_bank = any(kw in ft for kw in non_bank_signals)
+        if not is_non_bank:
+            # Additional check: if bank keywords are sparse relative to other sectors, skip boost
+            bank_core_hits = sum(1 for kw in ['tier 1 capital', 'net interest margin',
+                                                'provision for credit loss', 'loan loss',
+                                                'nonperforming', 'allowance for loan',
+                                                'deposits'] if kw in ft)
+            if bank_core_hits >= 2:
+                scores['bank'] = scores.get('bank', 0) + 50
     best, best_score = 'general', 0
     for s, sc in scores.items():
         if sc > best_score: best, best_score = s, sc
@@ -992,7 +1040,7 @@ def detect_period(table, full_text, is_10q):
     if has_three: return 0, 4
     return 0, 4
 
-def extract_financials(all_tables, scale, is_10q, full_text, table_scales=None):
+def extract_financials(all_tables, scale, is_10q, full_text, table_scales=None, table_contexts=None):
     r = {}
 
     # ── BDC / Investment Company Detection & Parsing ──
@@ -1181,7 +1229,7 @@ def extract_financials(all_tables, scale, is_10q, full_text, table_scales=None):
             max_rev = 0
             for row in table:
                 rt = ' '.join(str(c or '') for c in row).lower()
-                if any(x in rt for x in ['total revenue','revenues','earned premium','net sales','net interest income']):
+                if any(x in rt for x in ['total revenue','revenues','earned premium','net sales','net interest income','revenue']):
                     for c in row:
                         v = clean_num(str(c or ''))
                         if v is not None and v > max_rev:
@@ -1222,6 +1270,7 @@ def extract_financials(all_tables, scale, is_10q, full_text, table_scales=None):
                         quality -= 25
                         break
             # Penalty for segment tables (segment-level, not consolidated)
+            # Check both early text and full table text for segment markers
             if any(x in tt[:300] for x in ['consumer banking','commercial banking',
                                              'corporate and investment','wealth and investment',
                                              'segment results','reportable segment',
@@ -1229,6 +1278,24 @@ def extract_financials(all_tables, scale, is_10q, full_text, table_scales=None):
                                              'line of business','managed basis',
                                              'fully taxable-equivalent']):
                 quality -= 40
+            # Additional segment detection: "Segment Net income" or "Segment revenue" anywhere
+            if re.search(r'segment\s+(?:net\s+)?(?:income|loss|revenue|earnings|profit)', tt):
+                quality -= 40
+            # Bonus for EPS presence (strong signal this is the real consolidated IS)
+            has_eps_data = False
+            for row in table:
+                rt = ' '.join(str(c or '') for c in row).lower()
+                if any(x in rt for x in ['per share', 'earnings per', 'income per', 'loss per']):
+                    has_eps_data = True
+                    break
+            if has_eps_data:
+                quality += 30
+            # Bonus for diluted shares (another strong signal for real IS)
+            if any('diluted' in ' '.join(str(c or '') for c in row).lower() 
+                   and any(str(c or '').replace(',','').replace(' ','').isdigit() and len(str(c or '').replace(',','').replace(' ','')) >= 6 
+                           for c in row) 
+                   for row in table):
+                quality += 10
             # Bonus for more rows (comprehensive IS)
             quality += min(nrows, 50)
             # Bonus for larger revenue (consolidated > segment)
@@ -1411,32 +1478,12 @@ def extract_financials(all_tables, scale, is_10q, full_text, table_scales=None):
                             break
                 if v is not None and v > 0:
                     # Shares may have a DIFFERENT scale than financials.
-                    # Common patterns:
-                    #   "(dollars in millions, except per share amounts; shares in millions)" → shares × 1e6
-                    #   "(in millions, except share data in thousands)" → shares × 1e3
-                    #   "(in millions)" with no share-specific note → shares × 1e6
-                    eff_shares = eff
-                    
-                    # Check table header for explicit share scale (first 3 rows)
+                    # Use centralized resolver that checks table headers, context, and full text
                     header_text = ''
                     for hrow_idx in range(min(3, len(table))):
                         header_text += ' ' + ' '.join(str(c or '') for c in table[hrow_idx]).lower()
-                    shares_in_millions = bool(re.search(r'shares?\s+in\s+millions', header_text))
-                    shares_in_thousands = bool(re.search(r'shares?\s+in\s+thousands|except\s+share.*thousands', header_text))
-                    
-                    if shares_in_thousands:
-                        eff_shares = 1e3
-                    elif shares_in_millions:
-                        eff_shares = 1e6
-                    elif eff >= 1e6 and v > 50000 and v < 1e7:
-                        # Values like 269,700 are very likely shares in thousands (269.7M)
-                        # But values like 1,356 could be millions (1.356B for mega-caps)
-                        # Only override to 1e3 for very large raw values (>50K)
-                        # where millions interpretation would give >50B shares (impossible)
-                        eff_shares = 1e3
-                    elif eff >= 1e6 and v > 0 and v < 100:
-                        # Values like 0.27 in billions context → 270M shares
-                        eff_shares = eff
+                    ctx_text = table_contexts[tidx] if table_contexts and tidx < len(table_contexts) else ''
+                    eff_shares = _resolve_eff_shares(v, eff, header_text, ctx_text, full_text)
                     r['shares_diluted'] = v * eff_shares
 
         # Balance sheet — handle both combined and split BS tables
@@ -1619,17 +1666,12 @@ def extract_financials(all_tables, scale, is_10q, full_text, table_scales=None):
             if v is None and col > 0:
                 v = find_value(table, LABELS['shares_dil'], 0)
             if v is not None and v > 0:
-                eff_shares = eff
-                # Check table header for explicit share scale (first 3 rows)
+                # Use centralized resolver that checks table headers, context, and full text
                 hdr = ''
                 for hrow_idx2 in range(min(3, len(table))):
                     hdr += ' ' + ' '.join(str(c or '') for c in table[hrow_idx2]).lower()
-                if re.search(r'shares?\s+in\s+thousands|except\s+share.*thousands', hdr):
-                    eff_shares = 1e3
-                elif re.search(r'shares?\s+in\s+millions', hdr):
-                    eff_shares = 1e6
-                elif eff >= 1e6 and v > 50000 and v < 1e7:
-                    eff_shares = 1e3
+                ctx_text2 = table_contexts[tidx2] if table_contexts and tidx2 < len(table_contexts) else ''
+                eff_shares = _resolve_eff_shares(v, eff, hdr, ctx_text2, full_text)
                 r['shares_diluted'] = v * eff_shares
                 break
 
@@ -1651,6 +1693,37 @@ def extract_financials(all_tables, scale, is_10q, full_text, table_scales=None):
                     r['shares_diluted'] = val
                     break
             if 'shares_diluted' in r: break
+
+    # ── GLOBAL SANITY CHECK: Share count reasonableness ──
+    # No public company has more than ~25B shares outstanding (even BRK-B has ~2.1B class B equiv)
+    # If shares look impossibly high, likely a scale error — try to correct
+    if r.get('shares_diluted', 0) > 50e9:
+        # Check if EPS can give us a better number
+        if r.get('net_income') and r.get('eps_diluted') and abs(r['eps_diluted']) > 0.01:
+            eps_implied = abs(r['net_income'] / r['eps_diluted'])
+            if 1e5 < eps_implied < 50e9:
+                r['shares_diluted'] = eps_implied
+                r['_shares_corrected'] = 'eps_implied'
+        else:
+            # Divide by the filing scale as a last resort
+            corrected = r['shares_diluted']
+            for divisor in [1e3, 1e6]:
+                candidate = r['shares_diluted'] / divisor
+                if 1e5 < candidate < 50e9:
+                    corrected = candidate
+                    break
+            if corrected != r['shares_diluted']:
+                r['shares_diluted'] = corrected
+                r['_shares_corrected'] = f'divided_by_{int(r["shares_diluted"])}'
+
+    # Also sanity-check: if shares are implausibly LOW (e.g., < 10,000), 
+    # they may have been under-scaled
+    if 0 < r.get('shares_diluted', 0) < 1e4 and r.get('revenue', 0) > 1e6:
+        if r.get('net_income') and r.get('eps_diluted') and abs(r['eps_diluted']) > 0.01:
+            eps_implied = abs(r['net_income'] / r['eps_diluted'])
+            if eps_implied > 1e5:
+                r['shares_diluted'] = eps_implied
+                r['_shares_corrected'] = 'eps_implied_low'
 
     return r
 
@@ -1709,7 +1782,105 @@ def detect_scale_explicit(text):
         if re.search(pat, t): return sc
     return None  # No explicit indicator found
 
-def parse_html(filepath):
+def _shares_are_exempt_from_scale(text):
+    """Detect whether share/per-share data is explicitly exempted from the stated scale.
+    
+    Common patterns in SEC filings:
+      - "(in thousands, except for share and per share data)"
+      - "(in millions, except share data)"
+      - "(in thousands, except per share amounts)"
+      - "($ in thousands, except share and per share amounts)"
+      - "(in thousands, except for per share information)"
+      - "(in millions, except share data in thousands)"  ← shares ARE scaled, but differently
+    
+    Returns:
+      'exempt'  — shares are in raw counts (no scale)
+      'thousands' — shares are explicitly in thousands
+      'millions' — shares are explicitly in millions  
+      None — no explicit share-scale info found
+    """
+    t = text.lower()
+    
+    # Pattern: "except share data in thousands" / "shares in thousands" → shares × 1e3
+    if re.search(r'(?:shares?|share\s+data)\s+(?:are\s+)?(?:in|reported\s+in)\s+thousands', t):
+        return 'thousands'
+    if re.search(r'except\s+(?:for\s+)?share\s+(?:data|amounts?)\s+(?:which\s+(?:are|is)\s+)?in\s+thousands', t):
+        return 'thousands'
+    
+    # Pattern: "shares in millions" → shares × 1e6
+    if re.search(r'(?:shares?|share\s+data)\s+(?:are\s+)?(?:in|reported\s+in)\s+millions', t):
+        return 'millions'
+    
+    # Pattern: "except for share and per share data" / "except share data" / "except per share"
+    # These mean shares are RAW counts (not scaled)
+    if re.search(r'except\s+(?:for\s+)?share\s+(?:and\s+per[\s-]*share\s+)?(?:data|amounts?|information)', t):
+        return 'exempt'
+    if re.search(r'except\s+(?:for\s+)?per[\s-]*share\s+(?:and\s+share\s+)?(?:data|amounts?|information)', t):
+        return 'exempt'
+    if re.search(r'except\s+(?:for\s+)?(?:share\s+)?(?:and\s+)?per[\s-]*share', t):
+        return 'exempt'
+    if re.search(r'except\s+share\s+data', t):
+        return 'exempt'
+    
+    return None
+
+
+def _resolve_eff_shares(raw_value, eff, header_text, context_text, full_text):
+    """Determine the correct scale to apply to a raw share count value.
+    
+    This centralizes all share-scaling logic to avoid duplication and ensure
+    consistent handling across all extraction paths.
+    
+    Args:
+        raw_value: The raw numeric value extracted from the table
+        eff: The effective financial scale for the table (e.g., 1e3, 1e6)
+        header_text: Concatenated text from the table's first 3 rows (lowercase)
+        context_text: Text surrounding the table element (e.g., title, preceding divs)
+        full_text: Full filing text (for global fallback patterns)
+    
+    Returns:
+        The correct multiplier to apply to raw_value to get actual share count
+    """
+    # Check all available text sources for share-scale info
+    for text_source in [header_text, context_text, full_text[:5000]]:
+        if not text_source:
+            continue
+        exempt = _shares_are_exempt_from_scale(text_source)
+        if exempt == 'exempt':
+            return 1  # Shares are raw counts
+        elif exempt == 'thousands':
+            return 1e3
+        elif exempt == 'millions':
+            return 1e6
+    
+    # Explicit share scale patterns in header (existing logic, kept as fallback)
+    if re.search(r'shares?\s+in\s+thousands|except\s+share.*thousands', header_text):
+        return 1e3
+    if re.search(r'shares?\s+in\s+millions', header_text):
+        return 1e6
+    
+    # Heuristic: if share value looks like a raw count already
+    # (large number with many digits), don't scale it further
+    if raw_value > 1e6 and eff >= 1e3:
+        # 181,165,738 × 1e3 = 181B shares → clearly wrong
+        # 181,165,738 × 1 = 181M shares → correct
+        # Rule: if raw value > 1M AND scaling would give > 50B shares, it's raw
+        scaled = raw_value * eff
+        if scaled > 50e9:  # No public company has 50B+ shares
+            return 1
+    
+    if eff >= 1e6 and raw_value > 50000 and raw_value < 1e7:
+        # Values like 269,700 are likely shares in thousands (269.7M)
+        return 1e3
+    
+    if eff >= 1e6 and raw_value > 0 and raw_value < 100:
+        # Values like 0.27 in billions context → 270M shares
+        return eff
+    
+    return eff
+
+
+def parse_html(filepath, ticker=None):
     with open(filepath, 'r', encoding='utf-8', errors='replace') as f: content = f.read()
     soup = BeautifulSoup(content, 'html.parser')
     full_text = soup.get_text(separator=' ', strip=True)
@@ -1717,6 +1888,7 @@ def parse_html(filepath):
     form, is_10q = detect_form(full_text, os.path.basename(filepath))
     tables = []
     table_scales = []  # per-table scale from surrounding context (None if no explicit indicator)
+    table_contexts = []  # per-table raw context text for share-exemption detection
     for te in soup.find_all('table'):
         rows = []
         for tr in te.find_all('tr'):
@@ -1728,13 +1900,14 @@ def parse_html(filepath):
             ctx = _get_table_context(te)
             ctx_scale = detect_scale_explicit(ctx) if ctx else None
             table_scales.append(ctx_scale)
-    r = extract_financials(tables, scale, is_10q, full_text, table_scales=table_scales)
+            table_contexts.append(ctx or '')
+    r = extract_financials(tables, scale, is_10q, full_text, table_scales=table_scales, table_contexts=table_contexts)
     r['_form'] = form; r['_scale'] = scale; r['_tables'] = len(tables)
-    sec, conf = detect_sector(full_text)
+    sec, conf = detect_sector(full_text, ticker=ticker)
     r['_sector'] = sec; r['_sector_conf'] = conf
     return r
 
-def parse_pdf(filepath):
+def parse_pdf(filepath, ticker=None):
     tables = []; full_text = ''
     with pdfplumber.open(filepath) as pdf:
         for page in pdf.pages:
@@ -1746,7 +1919,7 @@ def parse_pdf(filepath):
     form, is_10q = detect_form(full_text, os.path.basename(filepath))
     r = extract_financials(tables, scale, is_10q, full_text)
     r['_form'] = form; r['_scale'] = scale; r['_tables'] = len(tables)
-    sec, conf = detect_sector(full_text)
+    sec, conf = detect_sector(full_text, ticker=ticker)
     r['_sector'] = sec; r['_sector_conf'] = conf
     return r
 
@@ -2152,11 +2325,11 @@ def run_dcf(fins, price, shares_mil, sector, beta=None, capex_model='da_proxy', 
             scen_results.append({'name': name, 'prob': prob, 'fv': round(fv, 2), 'upside': round(upside, 1)})
 
         pw_up = (pw_fv - price) / price * 100 if price > 0 else 0
-        if pw_up > 30: verdict = 'STRONG BUY'
-        elif pw_up > 10: verdict = 'BUY'
-        elif pw_up > -10: verdict = 'HOLD'
-        elif pw_up > -25: verdict = 'SELL'
-        else: verdict = 'STRONG SELL'
+        if pw_up > 30: verdict = 'SIGNIFICANTLY UNDERVALUED'
+        elif pw_up > 10: verdict = 'UNDERVALUED'
+        elif pw_up > -10: verdict = 'FAIR VALUE'
+        elif pw_up > -25: verdict = 'OVERVALUED'
+        else: verdict = 'SIGNIFICANTLY OVERVALUED'
 
         # Premium/discount to NAV
         p_nav_current = price / nav_per_share if nav_per_share > 0 else 0
@@ -2541,11 +2714,11 @@ def run_dcf(fins, price, shares_mil, sector, beta=None, capex_model='da_proxy', 
             scen_results.append({'name': name, 'prob': prob, 'fv': round(fv, 2), 'upside': round(upside, 1)})
 
         pw_up = (pw_fv - price) / price * 100 if price > 0 else 0
-        if pw_up > 30: verdict = 'STRONG BUY'
-        elif pw_up > 10: verdict = 'BUY'
-        elif pw_up > -10: verdict = 'HOLD'
-        elif pw_up > -25: verdict = 'SELL'
-        else: verdict = 'STRONG SELL'
+        if pw_up > 30: verdict = 'SIGNIFICANTLY UNDERVALUED'
+        elif pw_up > 10: verdict = 'UNDERVALUED'
+        elif pw_up > -10: verdict = 'FAIR VALUE'
+        elif pw_up > -25: verdict = 'OVERVALUED'
+        else: verdict = 'SIGNIFICANTLY OVERVALUED'
 
         # ── Bank-specific beyond-DCF layers ──
 
@@ -3110,11 +3283,11 @@ def run_dcf(fins, price, shares_mil, sector, beta=None, capex_model='da_proxy', 
             elif eps_growth < trailing_growth - 0.10 and eps_growth < 0:
                 sanity_flags.append(f'Margin pressure: EPS {eps_growth*100:+.0f}% vs Rev +{trailing_growth*100:.0f}%')
 
-    if pw_up > 30: verdict = 'STRONG BUY'
-    elif pw_up > 10: verdict = 'BUY'
-    elif pw_up > -10: verdict = 'HOLD'
-    elif pw_up > -25: verdict = 'SELL'
-    else: verdict = 'STRONG SELL'
+    if pw_up > 30: verdict = 'SIGNIFICANTLY UNDERVALUED'
+    elif pw_up > 10: verdict = 'UNDERVALUED'
+    elif pw_up > -10: verdict = 'FAIR VALUE'
+    elif pw_up > -25: verdict = 'OVERVALUED'
+    else: verdict = 'SIGNIFICANTLY OVERVALUED'
 
     # Implied growth rates
     base_tm = compute_terminal_multiple(wacc, sector, 1.0)
@@ -4179,11 +4352,11 @@ def run_full_valuation(fins, price, shares_mil, sector, beta=None, data_quality=
         blended_up = (blended_fv - price) / price * 100
 
         # Initial verdict from blended FV
-        if blended_up > 30: blended_verdict = 'STRONG BUY'
-        elif blended_up > 10: blended_verdict = 'BUY'
-        elif blended_up > -10: blended_verdict = 'HOLD'
-        elif blended_up > -25: blended_verdict = 'SELL'
-        else: blended_verdict = 'STRONG SELL'
+        if blended_up > 30: blended_verdict = 'SIGNIFICANTLY UNDERVALUED'
+        elif blended_up > 10: blended_verdict = 'UNDERVALUED'
+        elif blended_up > -10: blended_verdict = 'FAIR VALUE'
+        elif blended_up > -25: blended_verdict = 'OVERVALUED'
+        else: blended_verdict = 'SIGNIFICANTLY OVERVALUED'
 
         # MC consistency check: if MC strongly disagrees with the blended verdict,
         # soften the verdict (e.g., SELL→HOLD) but NEVER alter the reported FV or upside.
@@ -4196,22 +4369,22 @@ def run_full_valuation(fins, price, shares_mil, sector, beta=None, data_quality=
             # Only soften verdict if MC and blended strongly disagree directionally
             mc_strongly_bullish = mc_prob > 80 and mc_up > 20
             mc_strongly_bearish = mc_prob < 20 and mc_up < -20
-            verdict_bearish = blended_verdict in ('SELL', 'STRONG SELL')
-            verdict_bullish = blended_verdict in ('BUY', 'STRONG BUY')
+            verdict_bearish = blended_verdict in ('OVERVALUED', 'SIGNIFICANTLY OVERVALUED')
+            verdict_bullish = blended_verdict in ('UNDERVALUED', 'SIGNIFICANTLY UNDERVALUED')
 
             if mc_strongly_bullish and verdict_bearish:
-                # MC says 80%+ upside probability but blend says sell
-                # Soften by one notch: STRONG SELL→SELL, SELL→HOLD
-                if blended_verdict == 'STRONG SELL': blended_verdict = 'SELL'
-                elif blended_verdict == 'SELL': blended_verdict = 'HOLD'
+                # MC says 80%+ upside probability but blend says overvalued
+                # Soften by one notch
+                if blended_verdict == 'SIGNIFICANTLY OVERVALUED': blended_verdict = 'OVERVALUED'
+                elif blended_verdict == 'OVERVALUED': blended_verdict = 'FAIR VALUE'
             elif mc_strongly_bearish and verdict_bullish:
-                # MC says 80%+ downside probability but blend says buy
-                if blended_verdict == 'STRONG BUY': blended_verdict = 'BUY'
-                elif blended_verdict == 'BUY': blended_verdict = 'HOLD'
+                # MC says 80%+ downside probability but blend says undervalued
+                if blended_verdict == 'SIGNIFICANTLY UNDERVALUED': blended_verdict = 'UNDERVALUED'
+                elif blended_verdict == 'UNDERVALUED': blended_verdict = 'FAIR VALUE'
     else:
         blended_fv = dcf_fv
         blended_up = dcf_result.get('pw_up', 0)
-        blended_verdict = dcf_result.get('verdict', 'HOLD')
+        blended_verdict = dcf_result.get('verdict', 'FAIR VALUE')
 
     dcf_result['multi_model'] = {
         'blended_fv': blended_fv,
