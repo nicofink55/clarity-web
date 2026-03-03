@@ -13,6 +13,7 @@ from engine import (
     fetch_market_data,
     parse_html, parse_pdf, HAS_BS4, HAS_PDF,
     fetch_live_comps, PEER_GROUPS,
+    fetch_xbrl_financials_fallback,
     fetch_risk_free_rate,
     run_dcf, run_full_valuation,
     detect_sector, infer_ticker, fmt,
@@ -263,12 +264,120 @@ st.markdown("""
         border: 1px solid rgba(62,207,142,0.12) !important; border-radius: 12px !important;
         font-family: Inter,sans-serif !important; font-size: 0.95rem !important;
         font-weight: 400 !important; padding: 14px 18px !important;
-        height: auto !important;
+        height: auto !important; text-transform: uppercase !important;
     }
-    [data-testid="stForm"] .stTextInput input::placeholder { color: #3d4655 !important; }
+    [data-testid="stForm"] .stTextInput input::placeholder { color: #3d4655 !important; text-transform: none !important; }
     [data-testid="stForm"] .stTextInput input:focus {
         border-color: rgba(62,207,142,0.35) !important;
         box-shadow: 0 0 24px rgba(62,207,142,0.08) !important;
+    }
+
+    /* Override Streamlit's red form validation border */
+    .stTextInput input:invalid, .stTextInput input:required,
+    .stTextInput input[aria-invalid="true"],
+    [data-testid="stForm"] .stTextInput input:invalid,
+    [data-testid="stForm"] .stTextInput input:required,
+    .stTextInput div[data-baseweb="input"] input,
+    [data-testid="stForm"] div[data-baseweb="base-input"] input,
+    [data-testid="stForm"] div[data-baseweb="input"] {
+        border-color: rgba(62,207,142,0.12) !important;
+        box-shadow: none !important;
+        outline: none !important;
+    }
+    [data-testid="stForm"] .stTextInput input:focus:invalid,
+    [data-testid="stForm"] .stTextInput input:focus:required,
+    .stTextInput div[data-baseweb="input"]:focus-within {
+        border-color: rgba(62,207,142,0.35) !important;
+        box-shadow: 0 0 24px rgba(62,207,142,0.08) !important;
+        outline: none !important;
+    }
+    /* Kill any red/orange outline Streamlit applies to required fields */
+    [data-testid="stForm"] div[data-baseweb="base-input"],
+    [data-testid="stForm"] div[data-baseweb="input"],
+    [data-testid="stForm"] [data-baseweb="base-input"] > div,
+    .stTextInput > div, .stTextInput > div > div {
+        border-color: rgba(62,207,142,0.12) !important;
+        box-shadow: none !important;
+    }
+    [data-testid="stForm"] .stTextInput > div:focus-within,
+    [data-testid="stForm"] .stTextInput > div > div:focus-within,
+    [data-testid="stForm"] div[data-baseweb="base-input"]:focus-within,
+    [data-testid="stForm"] div[data-baseweb="input"]:focus-within {
+        border-color: rgba(62,207,142,0.35) !important;
+        box-shadow: 0 0 24px rgba(62,207,142,0.08) !important;
+    }
+    /* Nuclear override: catch ALL possible red/orange border states on any input wrapper */
+    .stTextInput [data-baseweb] *, .stTextInput [data-baseweb],
+    [data-testid="stForm"] [data-baseweb] *, [data-testid="stForm"] [data-baseweb],
+    .stTextInput input, [data-testid="stForm"] input {
+        outline-color: rgba(62,207,142,0.35) !important;
+        caret-color: #3ecf8e !important;
+    }
+    .stTextInput [data-baseweb]:focus-within, .stTextInput [data-baseweb]:focus-within *,
+    [data-testid="stForm"] [data-baseweb]:focus-within, [data-testid="stForm"] [data-baseweb]:focus-within * {
+        border-color: rgba(62,207,142,0.35) !important;
+        outline-color: rgba(62,207,142,0.35) !important;
+    }
+    /* Streamlit injects inline border-color on the baseweb wrapper — override with max specificity */
+    [data-testid="stForm"] .stTextInput [data-baseweb="input"][style],
+    [data-testid="stForm"] .stTextInput [data-baseweb="base-input"][style],
+    [data-testid="stForm"] .stTextInput div[style*="border"],
+    .stTextInput [data-baseweb="input"][style],
+    .stTextInput [data-baseweb="base-input"][style] {
+        border-color: rgba(62,207,142,0.12) !important;
+    }
+    [data-testid="stForm"] .stTextInput [data-baseweb="input"][style]:focus-within,
+    [data-testid="stForm"] .stTextInput [data-baseweb="base-input"][style]:focus-within,
+    .stTextInput [data-baseweb="input"][style]:focus-within,
+    .stTextInput [data-baseweb="base-input"][style]:focus-within {
+        border-color: rgba(62,207,142,0.35) !important;
+        box-shadow: 0 0 24px rgba(62,207,142,0.08) !important;
+    }
+
+    /* Replace Streamlit running indicator (swimmer/runner/etc) with a spinner */
+    [data-testid="stStatusWidget"] { overflow: hidden; }
+    [data-testid="stStatusWidget"] svg,
+    [data-testid="stStatusWidget"] img { display: none !important; visibility: hidden !important; width: 0 !important; height: 0 !important; overflow: hidden !important; }
+    [data-testid="stStatusWidget"] button { background: none !important; border: none !important; pointer-events: none !important; padding: 0 !important; min-height: 0 !important; }
+    [data-testid="stStatusWidget"] button svg { display: none !important; }
+    /* Hide the "Stop" text, button label, and running text */
+    [data-testid="stStatusWidget"] label,
+    [data-testid="stStatusWidget"] span,
+    [data-testid="stStatusWidget"] p { display: none !important; }
+    /* Hide entire button element so "Stop" text can't show */
+    [data-testid="stStatusWidget"] button[kind="secondary"],
+    [data-testid="stStatusWidget"] button[data-testid="baseButton-secondary"] { 
+        font-size: 0 !important; color: transparent !important; 
+        width: 0 !important; min-width: 0 !important; padding: 0 !important; 
+        margin: 0 !important; overflow: hidden !important; 
+    }
+    /* Animated spinner replacement */
+    header [data-testid="stStatusWidget"] { display: flex !important; align-items: center; justify-content: center; min-width: 36px; min-height: 36px; }
+    header [data-testid="stStatusWidget"]::after {
+        content: ""; display: block; width: 18px; height: 18px;
+        border: 2px solid rgba(62,207,142,0.15); border-top-color: #3ecf8e;
+        border-radius: 50%; animation: clarity-spin 0.8s linear infinite;
+    }
+    @keyframes clarity-spin { to { transform: rotate(360deg); } }
+
+    /* NUCLEAR: override Streamlit's red/orange focus ring on inputs via attribute selectors.
+       Streamlit injects inline styles with border-color, so we use :where() + layered specificity. */
+    :where([data-testid="stForm"]) :is(input, [data-baseweb], [data-baseweb] > div, div[class*="Input"]) {
+        border-color: rgba(62,207,142,0.12) !important;
+        outline: none !important;
+        box-shadow: none !important;
+    }
+    :where([data-testid="stForm"]) :is(input:focus, [data-baseweb]:focus-within, [data-baseweb]:focus-within > div, div[class*="Input"]:focus-within) {
+        border-color: rgba(62,207,142,0.35) !important;
+        outline: none !important;
+        box-shadow: 0 0 24px rgba(62,207,142,0.08) !important;
+    }
+    /* Catch Streamlit's baseweb isFocused prop which sets inline border */
+    [data-testid="stForm"] [data-baseweb] [style*="border"] {
+        border-color: rgba(62,207,142,0.12) !important;
+    }
+    [data-testid="stForm"] [data-baseweb]:focus-within [style*="border"] {
+        border-color: rgba(62,207,142,0.35) !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -419,6 +528,25 @@ def quick_run(ticker_val, form="10-K"):
         path, size = download_filing(info, tmpdir)
         if path.lower().endswith('.pdf'): st.session_state.fins = parse_pdf(path, ticker=ticker_val)
         else: st.session_state.fins = parse_html(path, ticker=ticker_val)
+    # ── XBRL fallback: if HTML parsing found no revenue/NI, try XBRL companyfacts ──
+    fins = st.session_state.fins
+    has_core_data = (fins.get('revenue') or fins.get('net_income') or fins.get('operating_income'))
+    if not has_core_data:
+        log(f"HTML parsing found no financial data — trying XBRL fallback", "warn")
+        xbrl_fins = fetch_xbrl_financials_fallback(cik, ticker=ticker_val,
+                                                     log_fn=lambda m, t: log(m, t))
+        if xbrl_fins and (xbrl_fins.get('revenue') or xbrl_fins.get('net_income')):
+            # Preserve metadata from HTML parse, overlay financial data from XBRL
+            html_sector = fins.get('_sector', 'general')
+            html_sector_conf = fins.get('_sector_conf', 'low')
+            st.session_state.fins = xbrl_fins
+            # Use XBRL-inferred sector only if HTML didn't detect one confidently
+            if xbrl_fins.get('_sector') and html_sector_conf == 'low':
+                st.session_state.fins['_sector'] = xbrl_fins['_sector']
+            else:
+                st.session_state.fins['_sector'] = html_sector
+            st.session_state.fins['_sector_conf'] = html_sector_conf
+            log(f"XBRL fallback succeeded — rev=${xbrl_fins.get('revenue',0)/1e6:,.0f}M", "ok")
     st.session_state.sector = st.session_state.fins.get('_sector', 'general')
     st.session_state.data_quality = {'quarters_available': 1}
     st.session_state.filing_loaded = True
@@ -523,6 +651,23 @@ with st.sidebar:
                     progress.progress(60, "Parsing...")
                     if path.lower().endswith('.pdf'): st.session_state.fins = parse_pdf(path, ticker=ticker_input)
                     else: st.session_state.fins = parse_html(path, ticker=ticker_input)
+                # ── XBRL fallback for sidebar path ──
+                fins_sb = st.session_state.fins
+                has_core = (fins_sb.get('revenue') or fins_sb.get('net_income') or fins_sb.get('operating_income'))
+                if not has_core:
+                    progress.progress(65, "HTML empty — trying XBRL...")
+                    xbrl_fins = fetch_xbrl_financials_fallback(cik, ticker=ticker_input,
+                                                                 log_fn=lambda m, t: log(m, t))
+                    if xbrl_fins and (xbrl_fins.get('revenue') or xbrl_fins.get('net_income')):
+                        html_sector = fins_sb.get('_sector', 'general')
+                        html_sector_conf = fins_sb.get('_sector_conf', 'low')
+                        st.session_state.fins = xbrl_fins
+                        if xbrl_fins.get('_sector') and html_sector_conf == 'low':
+                            st.session_state.fins['_sector'] = xbrl_fins['_sector']
+                        else:
+                            st.session_state.fins['_sector'] = html_sector
+                        st.session_state.fins['_sector_conf'] = html_sector_conf
+                        log(f"XBRL fallback: rev=${xbrl_fins.get('revenue',0)/1e6:,.0f}M", "ok")
                 sector = st.session_state.fins.get('_sector', 'general')
                 st.session_state.sector = sector
                 st.session_state.data_quality = {'quarters_available': 1}

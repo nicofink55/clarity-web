@@ -117,8 +117,9 @@ def find_filing(cik, form_type):
 def download_filing(info, save_dir):
     acc_flat = info["accession"].replace("-", "")
     cik_clean = info["cik"].lstrip("0")
+    base_url = f"https://www.sec.gov/Archives/edgar/data/{cik_clean}/{acc_flat}"
     # Primary URL: standard Archives path
-    url = f"https://www.sec.gov/Archives/edgar/data/{cik_clean}/{acc_flat}/{info['doc']}"
+    url = f"{base_url}/{info['doc']}"
     try:
         content = sec_fetch(url, retries=5, timeout=60)
     except Exception:
@@ -128,6 +129,50 @@ def download_filing(info, save_dir):
             content = sec_fetch(alt_url, retries=3, timeout=60)
         except Exception:
             raise Exception(f"Could not download filing after retries.\nURL: {url}\nTip: Try again in 30 seconds — EDGAR may be rate-limiting.")
+
+    # ── Exhibit fallback ──
+    # Some large filers (WFC, C, BRK) package the 10-K as a multi-document filing
+    # where primaryDocument is the cover/narrative (no financial statements) and the
+    # actual financials are in a separate exhibit.  Detect this and fetch the right file.
+    if len(content) < 1_500_000:  # full financials are typically 1.5MB+
+        ct = content.decode('utf-8', errors='ignore').lower()
+        has_financials = (
+            ('net income' in ct or 'net loss' in ct or 'net earnings' in ct) and
+            ('total assets' in ct or 'total liabilities' in ct) and
+            ('operating' in ct or 'interest income' in ct)
+        )
+        if not has_financials:
+            # Primary doc is likely a cover page — find the financial exhibit
+            try:
+                idx = sec_json(f"{base_url}/index.json")
+                items = idx.get("directory", {}).get("item", [])
+                # Gather all .htm/.html files except the primary doc, sorted by size desc
+                primary_name = info['doc'].lower()
+                htm_docs = []
+                for item in items:
+                    name = item.get("name", "")
+                    size = int(item.get("size", 0) or 0)
+                    if (name.lower().endswith(('.htm', '.html')) and
+                        name.lower() != primary_name and size > 50_000):
+                        htm_docs.append((name, size))
+                htm_docs.sort(key=lambda x: -x[1])  # largest first
+                # Try candidates until we find one with financial statements
+                for exhibit_name, _ in htm_docs[:5]:  # try up to 5
+                    try:
+                        exhibit_url = f"{base_url}/{exhibit_name}"
+                        candidate = sec_fetch(exhibit_url, retries=2, timeout=45)
+                        ct2 = candidate.decode('utf-8', errors='ignore').lower()
+                        if (('net income' in ct2 or 'net loss' in ct2 or 'net earnings' in ct2 or
+                             'net interest income' in ct2) and
+                            ('total assets' in ct2 or 'total liabilities' in ct2)):
+                            content = candidate
+                            info['doc'] = exhibit_name
+                            break
+                    except Exception:
+                        continue
+            except Exception:
+                pass  # if index fetch fails, proceed with original content
+
     ext = os.path.splitext(info["doc"])[1] or ".htm"
     safe_form = info["form"].replace("/", "-")
     filename = f"{safe_form}_{info['date']}{ext}"
@@ -560,6 +605,156 @@ def _fetch_peer_financials_xbrl(cik):
             "da": da, "shares": shares, "equity": equity, "debt": debt, "cash": cash}
 
 
+def fetch_xbrl_financials_fallback(cik, ticker=None, log_fn=None):
+    """Fallback: extract a full fins dict from EDGAR XBRL companyfacts API.
+
+    Used when HTML parsing fails (e.g. WFC's 10-K is a cover page that
+    incorporates the Annual Report by reference, leaving no parseable tables).
+
+    Returns a fins dict compatible with run_full_valuation, or None on failure.
+    """
+    try:
+        data = sec_json(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json")
+    except Exception as e:
+        if log_fn: log_fn(f"XBRL fallback: API fetch failed: {e}", "warn")
+        return None
+
+    gaap = data.get("facts", {}).get("us-gaap", {})
+    dei = data.get("facts", {}).get("dei", {})
+
+    # ── Find most recent 10-K fiscal year end ──
+    REV_CONCEPTS = [
+        "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "RevenueFromContractWithCustomerIncludingAssessedTax",
+        "Revenues", "SalesRevenueNet",
+        # Bank-specific revenue concepts
+        "InterestAndDividendIncomeOperating",
+        "InterestIncomeExpenseNet",  # net interest income
+        "NoninterestIncome",
+    ]
+    best_end, best_rev, best_concept = "", 0, ""
+    for rc in REV_CONCEPTS:
+        c = gaap.get(rc)
+        if not c: continue
+        for uk in c.get("units", {}):
+            annuals = [e for e in c["units"][uk]
+                      if e.get("form") in ("10-K", "10-K/A") and e.get("end", "") >= "2023-01-01"]
+            if annuals:
+                annuals.sort(key=lambda x: x.get("end", ""), reverse=True)
+                if annuals[0]["end"] > best_end:
+                    best_end = annuals[0]["end"]
+                    best_rev = annuals[0].get("val", 0)
+                    best_concept = rc
+    if not best_end:
+        if log_fn: log_fn("XBRL fallback: no 10-K revenue data found", "warn")
+        return None
+
+    gv = lambda concepts: _get_xbrl_annual_value(gaap, concepts, best_end)
+
+    # ── Core financials ──
+    ni = gv(["NetIncomeLoss", "NetIncomeLossAvailableToCommonStockholdersBasic", "ProfitLoss"])
+    oi = gv(["OperatingIncomeLoss"])
+    da = gv(["DepreciationDepletionAndAmortization", "DepreciationAndAmortization",
+             "DepreciationAmortizationAndAccretionNet"])
+    equity = gv(["StockholdersEquity",
+                 "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"])
+    debt = gv(["LongTermDebt", "LongTermDebtNoncurrent", "LongTermDebtAndCapitalLeaseObligations"])
+    cash = gv(["CashAndCashEquivalentsAtCarryingValue",
+               "CashCashEquivalentsAndShortTermInvestments"])
+    total_assets = gv(["Assets"])
+    total_liabilities = gv(["Liabilities"])
+    ocf = gv(["NetCashProvidedByOperatingActivities",
+              "NetCashProvidedByUsedInOperatingActivities"])
+    capex = gv(["PaymentsToAcquirePropertyPlantAndEquipment",
+                "PaymentsToAcquireProductiveAssets",
+                "CapitalExpendituresIncurredButNotYetPaid"])
+    sbc = gv(["ShareBasedCompensation", "AllocatedShareBasedCompensationExpense"])
+    gross_profit = gv(["GrossProfit"])
+    provision = gv(["ProvisionForLoanLeaseAndOtherLosses",
+                    "ProvisionForCreditLosses",
+                    "ProvisionForLoanAndLeaseLosses"])
+
+    # ── Shares ──
+    shares = gv(["WeightedAverageNumberOfDilutedSharesOutstanding",
+                  "WeightedAverageNumberOfShareOutstandingBasicAndDiluted"])
+    if not shares:
+        shares = gv(["CommonStockSharesOutstanding"])
+    # EPS-implied fallback
+    eps = gv(["EarningsPerShareDiluted"])
+    if eps and eps > 0 and ni and ni > 0:
+        eps_implied = ni / eps
+        if shares <= 0:
+            shares = eps_implied
+        elif shares > 0 and (shares / eps_implied < 0.4 or shares / eps_implied > 2.5):
+            shares = eps_implied
+
+    # ── Prior year revenue ──
+    rev_prior = 0
+    from datetime import datetime, timedelta
+    try:
+        end_dt = datetime.strptime(best_end, "%Y-%m-%d")
+        prior_target = (end_dt - timedelta(days=365)).strftime("%Y-%m-%d")
+        # Look for the same concept in the prior year (±60 day window)
+        for rc in [best_concept] + [c for c in REV_CONCEPTS if c != best_concept]:
+            c = gaap.get(rc)
+            if not c: continue
+            for uk in c.get("units", {}):
+                for e in c["units"][uk]:
+                    if e.get("form") not in ("10-K", "10-K/A"): continue
+                    try:
+                        gap = abs((datetime.strptime(e.get("end", ""), "%Y-%m-%d") - 
+                                   datetime.strptime(prior_target, "%Y-%m-%d")).days)
+                        if gap < 60 and e.get("val", 0) > 0:
+                            rev_prior = e["val"]
+                            break
+                    except: continue
+            if rev_prior > 0: break
+    except: pass
+
+    # ── Bank-specific: combine net interest income + noninterest income for "revenue" ──
+    if best_concept in ("InterestAndDividendIncomeOperating", "InterestIncomeExpenseNet"):
+        nii = gv(["InterestIncomeExpenseNet", "InterestAndDividendIncomeOperating"])
+        nonii = gv(["NoninterestIncome"])
+        if nii and nonii:
+            best_rev = nii + nonii  # total revenue = NII + noninterest income
+
+    # ── Sector detection ──
+    # Basic heuristic: if provision_credit_losses is populated, it's likely a bank
+    sector = 'general'
+    if provision and provision > 0 and best_concept in (
+        "InterestAndDividendIncomeOperating", "InterestIncomeExpenseNet"):
+        sector = 'bank'
+
+    r = {
+        'revenue': best_rev,
+        'net_income': ni or 0,
+        'operating_income': oi or 0,
+        'operating_cf': ocf or 0,
+        'capex': abs(capex) if capex else 0,
+        'depreciation': da or 0,
+        'stockholders_equity': equity or 0,
+        'long_term_debt': debt or 0,
+        'cash': cash or 0,
+        'total_assets': total_assets or 0,
+        'total_liabilities': total_liabilities or 0,
+        'gross_profit': gross_profit or 0,
+        'sbc': sbc or 0,
+        'provision_credit_losses': provision or 0,
+        'revenue_prior': rev_prior,
+        'eps_diluted': eps or (ni / shares if ni and shares and shares > 0 else 0),
+        '_xbrl_fallback': True,
+        '_sector': sector if sector != 'general' else None,  # only override if confident
+        '_form': '10-K',
+    }
+
+    if log_fn:
+        log_fn(f"XBRL fallback: extracted {sum(1 for v in r.values() if v)} fields, "
+               f"rev=${best_rev/1e6:,.0f}M, NI=${(ni or 0)/1e6:,.0f}M, "
+               f"end={best_end}", "info")
+
+    return r
+
+
 def fetch_live_comps(sector, log_fn=None):
     """Fetch live sector comps from EDGAR XBRL + Yahoo prices.
 
@@ -738,7 +933,7 @@ TICKER_SECTOR_OVERRIDE = {
     'NVDA': 'hyperscaler', 'ORCL': 'hyperscaler', 'NFLX': 'hyperscaler',
     # Fintech — often mention banking terms but aren't banks
     'PYPL': 'fintech', 'SQ': 'fintech', 'SOFI': 'fintech', 'AFRM': 'fintech',
-    'COIN': 'fintech',
+    'COIN': 'fintech', 'DAVE': 'fintech',
     # Banks (explicit)
     'JPM': 'bank', 'BAC': 'bank', 'WFC': 'bank', 'GS': 'bank', 'MS': 'bank',
     'C': 'bank', 'USB': 'bank', 'PNC': 'bank', 'SCHW': 'bank', 'TFC': 'bank',
