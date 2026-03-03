@@ -3231,13 +3231,14 @@ def run_dcf(fins, price, shares_mil, sector, beta=None, capex_model='da_proxy', 
         if sev and ebitda > 0 and shares > 0:
             evebitda_fv = round((ebitda * sev - nd) / shares, 2)
         comps_check = {
-            'pe_fv': round(pe_fv, 2),
+            'pe_fv': round(pe_fv, 2) if eps_dil > 0 else None,
             'sector_pe': spe,
             'sector_pe_static': spe_static,
             'comps_source': comps_source,
             'current_pe': round(price / eps_dil, 1) if eps_dil > 0 else None,
             'evebitda_fv': evebitda_fv,
             'sector_evebitda': sev,
+            'current_evebitda': round((mcap + nd) / ebitda, 1) if ebitda > 0 else None,
         }
         # Flag large divergence between DCF and comparables
         avg_comp = pe_fv
@@ -4128,6 +4129,27 @@ def _detect_company_profile(fins, sector, data_quality):
     net_margin = ni / rev if rev > 0 and ni > 0 else 0
     gp_margin = gp / rev if rev > 0 and gp > 0 else 0
     trailing_g = (rev - rev_prior) / rev_prior if rev_prior and rev_prior > 0 else 0
+
+    # ── GP margin fallback ──
+    # Many filings (especially fintech, SaaS) don't report a "gross profit" line.
+    # Without GP margin, the profile detector fails silently, causing the outlier
+    # dampening cascade.  When GP is missing, infer from sector + operating margin:
+    # if operating margin is thin but the sector typically has high GP, it's safe
+    # to assume GP margin exceeds 25%.
+    if gp_margin == 0 and rev > 0:
+        oi = fins.get('operating_income', 0) or 0
+        oi_margin = oi / rev if oi != 0 else 0
+        # Sectors where GP margin is structurally high (>50%) even when net/op margins are thin
+        HIGH_GP_SECTORS = {
+            'saas_tech': 0.65, 'fintech': 0.50, 'hyperscaler': 0.55,
+            'payment_network': 0.55, 'data_analytics': 0.60, 'pharma': 0.60,
+        }
+        sector_gp = HIGH_GP_SECTORS.get(sector)
+        if sector_gp is not None:
+            # Use the sector floor, but only if operating margin is consistent
+            # (OI margin < sector GP floor means there's real opex above COGS)
+            if oi_margin < sector_gp:
+                gp_margin = sector_gp
 
     adjustments = {
         'dcf': 1.0, 'residual_income': 1.0, 'comps': 1.0,

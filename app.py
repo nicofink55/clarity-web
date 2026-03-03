@@ -645,8 +645,7 @@ if not st.session_state.dcf_result:
             </div>
             <div class="shimmer-line" style="max-width:200px;margin:12px auto"></div>
             <div style="color:#8b95a8;font-size:1.05rem;margin:8px 0 0;font-family:Inter,sans-serif;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.6">
-                Multi-model equity valuation from SEC filings & live market data.<br>
-                <span style="color:#5a6478">DCF · Residual Income · Comps · Monte Carlo — in seconds.</span>
+                Equity valuation from SEC filings, live market data, and FRED.
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -696,17 +695,17 @@ if not st.session_state.dcf_result:
             <div style="color:#3ecf8e;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.12em;font-family:Inter,sans-serif;margin-bottom:16px">How it works</div>
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
                 <div class="section-card" style="text-align:center;padding:20px">
-                    <div style="font-size:1.4rem;margin-bottom:8px">📄</div>
+                    <div style="font-size:1.1rem;margin-bottom:8px;color:#3ecf8e;font-family:JetBrains Mono,monospace;font-weight:700;letter-spacing:-0.02em">SEC</div>
                     <div style="color:#e2e8f0;font-size:0.8rem;font-weight:600;font-family:Inter,sans-serif;margin-bottom:4px">Pull Filing</div>
-                    <div style="color:#5a6478;font-size:0.72rem;font-family:Inter,sans-serif;line-height:1.5">Live 10-K/10-Q from SEC EDGAR with auto-parsed financials</div>
+                    <div style="color:#5a6478;font-size:0.72rem;font-family:Inter,sans-serif;line-height:1.5">Live 10-K/10-Q from EDGAR with auto-parsed financials</div>
                 </div>
                 <div class="section-card" style="text-align:center;padding:20px">
-                    <div style="font-size:1.4rem;margin-bottom:8px">🔬</div>
+                    <div style="font-size:1.1rem;margin-bottom:8px;color:#3ecf8e;font-family:JetBrains Mono,monospace;font-weight:700;letter-spacing:-0.02em">×6</div>
                     <div style="color:#e2e8f0;font-size:0.8rem;font-weight:600;font-family:Inter,sans-serif;margin-bottom:4px">Multi-Model</div>
                     <div style="color:#5a6478;font-size:0.72rem;font-family:Inter,sans-serif;line-height:1.5">DCF, Residual Income, Comps, ROIC Fade, DDM — triangulated</div>
                 </div>
                 <div class="section-card" style="text-align:center;padding:20px">
-                    <div style="font-size:1.4rem;margin-bottom:8px">🎯</div>
+                    <div style="font-size:1.1rem;margin-bottom:8px;color:#3ecf8e;font-family:JetBrains Mono,monospace;font-weight:700;letter-spacing:-0.02em">FV</div>
                     <div style="color:#e2e8f0;font-size:0.8rem;font-weight:600;font-family:Inter,sans-serif;margin-bottom:4px">Fair Value</div>
                     <div style="color:#5a6478;font-size:0.72rem;font-family:Inter,sans-serif;line-height:1.5">Blended valuation with Monte Carlo confidence intervals</div>
                 </div>
@@ -1141,10 +1140,12 @@ with tab_context:
         with ctx_c2:
             if cc:
                 cpe = cc.get('current_pe')
-                if cpe:
+                eveb = cc.get('evebitda_fv')
+                if cpe or eveb:
                     src = cc.get('comps_source', 'static')
-                    rows = [['P/E', f'<span class="num">{cpe:.1f}x</span>', f'<span class="num">{cc["sector_pe"]}x</span>', f'<span class="num">${cc["pe_fv"]:,.2f}</span>']]
-                    eveb = cc.get('evebitda_fv')
+                    rows = []
+                    if cpe:
+                        rows.append(['P/E', f'<span class="num">{cpe:.1f}x</span>', f'<span class="num">{cc["sector_pe"]}x</span>', f'<span class="num">${cc["pe_fv"]:,.2f}</span>'])
                     if eveb:
                         cur_eveb = cc.get('current_evebitda', '')
                         cur_eveb_str = f'<span class="num">{cur_eveb:.1f}x</span>' if cur_eveb else '<span class="dim">—</span>'
