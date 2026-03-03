@@ -24,8 +24,6 @@ from PIL import Image as _PILImage
 _favicon = _PILImage.open(os.path.join(os.path.dirname(__file__), "favicon.png"))
 st.set_page_config(page_title="Clarity — Equity Valuation Engine", page_icon=_favicon, layout="wide", initial_sidebar_state="collapsed")
 
-from ticker_tape import render_ticker_tape, log_ticker_search
-
 # ════════════════════════════════════════
 #  THEME & CSS
 # ════════════════════════════════════════
@@ -60,6 +58,7 @@ st.markdown("""
     h1,h2,h3 { color: #e2e8f0 !important; font-family: Inter,sans-serif !important; }
     .stMarkdown p, .stMarkdown li { color: #8b95a8; font-family: Inter,sans-serif; }
     #MainMenu, footer { visibility: hidden; }
+    .block-container { padding-top: 2.5rem !important; }
 
     /* ── Z-index layering for neural bg ── */
     .stApp > * { position: relative; z-index: 1; }
@@ -413,8 +412,6 @@ if(n.r>1.5){ctx.beginPath();ctx.arc(n.x,n.y,n.r+4,0,Math.PI*2);ctx.fillStyle='rg
 ">
 """, unsafe_allow_html=True)
 
-# ── Ticker Tape ──
-st.markdown(render_ticker_tape(), unsafe_allow_html=True)
 
 
 # ════════════════════════════════════════
@@ -523,7 +520,6 @@ def quick_run(ticker_val, form="10-K"):
     """Pull filing + market data + run valuation in one shot."""
     st.session_state.ticker = ticker_val
     st.session_state.dcf_result = None
-    log_ticker_search(ticker_val)  # Track for ticker tape trending
     cik, name = lookup_cik(ticker_val)
     st.session_state.company_name = name
     info = find_filing(cik, form)
@@ -626,7 +622,6 @@ with st.sidebar:
     if pull_submitted and ticker_input:
         st.session_state.ticker = ticker_input
         st.session_state.dcf_result = None
-        log_ticker_search(ticker_input)  # Track for ticker tape trending
         progress = st.empty()
         status = st.empty()
         try:
@@ -917,7 +912,7 @@ sector_name = SECTOR_NAMES.get(sector, sector)
 confidence = st.session_state.fins.get('_sector_conf', 'medium') if st.session_state.fins else 'medium'
 conf_color = '#3ecf8e' if confidence == 'high' else '#d29922' if confidence == 'medium' else '#f85149'
 conf_icon = '✓' if confidence == 'high' else '⚠' if confidence == 'medium' else '⚠'
-sv1, sv2, sv3 = st.columns([3, 2, 1])
+sv1, sv2, sv3, sv4 = st.columns([3, 2, 1, 1])
 with sv1:
     st.markdown(f'<div style="display:flex;align-items:center;gap:8px;padding:4px 0"><span style="color:{conf_color};font-size:0.75rem">{conf_icon}</span><span style="color:#8b95a8;font-size:0.78rem;font-family:Inter,sans-serif">Classified as <strong style="color:#c0c8d8">{sector_name}</strong></span><span style="color:#3d4655;font-size:0.65rem;font-family:Inter,sans-serif">({confidence} confidence)</span></div>', unsafe_allow_html=True)
 with sv2:
@@ -934,6 +929,13 @@ with sv3:
             st.rerun()
         except Exception as e:
             st.error(f"Error: {e}")
+with sv4:
+    if st.button("\u2190 New Analysis", key="new_analysis_top", use_container_width=True):
+        for k in ['fins', 'dcf_result', 'ticker', 'price', 'shares_mil', 'sector', 'beta',
+                   'company_name', 'filing_loaded', 'auto_loaded', 'filing_info', 'price_ts']:
+            if k in st.session_state: del st.session_state[k]
+        st.query_params.clear()
+        st.rerun()
 if new_sec != sector:
     st.markdown(f'<div style="color:#d29922;font-size:0.72rem;font-family:Inter,sans-serif;margin:-4px 0 4px">Sector changed to {SECTOR_NAMES.get(new_sec, new_sec)} — click <strong>Re-run</strong> to update valuation</div>', unsafe_allow_html=True)
 
