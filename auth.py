@@ -20,6 +20,12 @@ FIREBASE_CONFIG = {
 TIER_LIMITS = {"visitor": 0, "free": 5, "pro": 999999}
 POPULAR_TICKERS = ["AAPL", "NVDA", "MSFT", "GOOG", "AMZN", "META", "TSLA", "PLTR"]
 
+# Master accounts — always pro tier, unlimited runs
+ADMIN_EMAILS = [
+    # Add your Google account email below, e.g.:
+    # "you@gmail.com",
+]
+
 
 # ================================================================
 #  SESSION STATE HELPERS
@@ -45,6 +51,8 @@ def get_tier():
     user = get_user()
     if not user:
         return "visitor"
+    if user.get("email", "").lower() in [e.lower() for e in ADMIN_EMAILS]:
+        return "pro"
     return user.get("tier", "free")
 
 

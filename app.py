@@ -23,10 +23,9 @@ from engine import (
 from ticker_tape import render_ticker_tape, log_ticker_search
 from auth import (
     init_auth, get_user, get_tier, is_signed_in,
-    can_run_analysis, increment_usage, save_analysis,
-    render_sign_in_modal, render_limit_reached_modal,
-    render_user_header, toggle_watchlist, is_in_watchlist,
-    _AUTH_CSS, POPULAR_TICKERS as AUTH_POPULAR,
+    can_run_analysis, save_analysis,
+    show_sign_in_prompt, show_limit_reached,
+    render_auth_sidebar, toggle_watchlist, is_in_watchlist,
 )
 
 from PIL import Image as _PILImage
@@ -628,6 +627,7 @@ with st.sidebar:
         <div class="logo-icon">C</div>
         <div><span class="logo-text">Clarity</span><br><span style="color:#3d4655;font-size:0.6rem;font-family:Inter,sans-serif;letter-spacing:0.1em;text-transform:uppercase">Valuation Engine</span></div>
     </div>""", unsafe_allow_html=True)
+    render_auth_sidebar()
     st.markdown('<hr style="margin: 0 0 16px 0; border-color: #1a1f2e">', unsafe_allow_html=True)
 
     st.markdown('<div class="sidebar-section">Pull Filing</div>', unsafe_allow_html=True)
@@ -803,8 +803,6 @@ if not st.session_state.dcf_result:
         st.info("Filing loaded. Click **Run Valuation** in the sidebar.")
     else:
         # ── LANDING PAGE ──
-        # Auth: show user pill or sign-in button
-        st.markdown(_AUTH_CSS + '<div style="position:fixed;top:44px;right:24px;z-index:998">' + render_user_header() + '</div>', unsafe_allow_html=True)
         st.markdown("""
         <div style="text-align:center;padding:60px 20px 0">
             <div style="display:inline-flex;align-items:center;gap:14px;margin-bottom:20px">
@@ -833,20 +831,21 @@ if not st.session_state.dcf_result:
 
         if search_go and search_ticker:
             allowed, reason = can_run_analysis(search_ticker)
-            if not allowed and reason == "sign_in":
-                render_sign_in_modal()
-            elif not allowed and reason == "limit_reached":
-                render_limit_reached_modal()
-            else:
-                try:
-                    with st.spinner(f"Analyzing {search_ticker}..."):
-                        quick_run(search_ticker, form=search_form)
-                    st.query_params["ticker"] = search_ticker
-                    st.session_state.auto_loaded = True
-                    log_ticker_search(search_ticker)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Could not load {search_ticker}: {e}")
+            if not allowed:
+                if reason == "sign_in":
+                    show_sign_in_prompt()
+                else:
+                    show_limit_reached()
+                st.stop()
+            try:
+                with st.spinner(f"Analyzing {search_ticker}..."):
+                    quick_run(search_ticker, form=search_form)
+                st.query_params["ticker"] = search_ticker
+                st.session_state.auto_loaded = True
+                log_ticker_search(search_ticker)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Could not load {search_ticker}: {e}")
 
         # ── Featured tickers ──
         st.markdown('<div style="text-align:center;margin-top:28px;margin-bottom:8px;color:#3d4655;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.12em;font-family:Inter,sans-serif">Popular tickers</div>', unsafe_allow_html=True)
@@ -856,19 +855,30 @@ if not st.session_state.dcf_result:
             with feat_cols[i]:
                 if st.button(t, key=f"feat_{t}", use_container_width=True):
                     allowed_f, reason_f = can_run_analysis(t)
-                    if not allowed_f and reason_f == "sign_in":
-                        render_sign_in_modal()
-                    elif not allowed_f and reason_f == "limit_reached":
-                        render_limit_reached_modal()
-                    else:
-                        try:
-                            with st.spinner(f"Loading {t}..."):
-                                quick_run(t)
-                            st.query_params["ticker"] = t
-                            st.session_state.auto_loaded = True
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error: {e}")
+                    if not allowed_f:
+                        if reason_f == "sign_in":
+                            show_sign_in_prompt()
+                        else:
+                            show_limit_reached()
+                        st.stop()
+                    try:
+                        with st.spinner(f"Loading {t}..."):
+                            quick_run(t)
+                        st.query_params["ticker"] = t
+                        st.session_state.auto_loaded = True
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+
+        # ── Sign-in CTA for visitors ──
+        if not is_signed_in():
+            st.markdown('<div style="text-align:center;margin-top:20px;margin-bottom:-8px">', unsafe_allow_html=True)
+            _, cta_col, _ = st.columns([1, 2, 1])
+            with cta_col:
+                if st.button("Sign in with Google for full access", key="landing_signin", use_container_width=True):
+                    st.session_state["_auth_do_signin"] = True
+                    st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
         # ── How it works ──
         st.markdown("""
@@ -931,8 +941,6 @@ if st.session_state.get('_last_tracked') != track_key:
     track_valuation(ticker, company, SECTOR_NAMES.get(sector, sector), fv, price, upside, verdict, source)
     st.session_state['_last_tracked'] = track_key
 
-# ── Auth: user pill + save on results page ──
-st.markdown(_AUTH_CSS + '<div style="position:fixed;top:44px;right:24px;z-index:998">' + render_user_header() + '</div>', unsafe_allow_html=True)
 # Auto-save analysis for signed-in users
 if is_signed_in() and not st.session_state.get("_analysis_saved"):
     save_analysis(ticker, {"fair_value": fv, "price": price, "verdict": verdict,
@@ -988,7 +996,7 @@ with sv5:
             st.rerun()
     else:
         if st.button("\u2606 Watch", key="watchlist_btn", use_container_width=True):
-            render_sign_in_modal()
+            show_sign_in_prompt()
 if new_sec != sector:
     st.markdown(f'<div style="color:#d29922;font-size:0.72rem;font-family:Inter,sans-serif;margin:-4px 0 4px">Sector changed to {SECTOR_NAMES.get(new_sec, new_sec)} — click <strong>Re-run</strong> to update valuation</div>', unsafe_allow_html=True)
 
