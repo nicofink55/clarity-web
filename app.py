@@ -876,7 +876,7 @@ if not st.session_state.dcf_result:
             _, cta_col, _ = st.columns([1, 2, 1])
             with cta_col:
                 from auth import _render_google_button
-                _render_google_button(height=46)
+                _render_google_button("gsi_landing")
             st.markdown('</div>', unsafe_allow_html=True)
 
         # ── How it works ──
