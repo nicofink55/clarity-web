@@ -875,12 +875,24 @@ def detect_scale(text):
 
     # CRITICAL FIX: "(in millions, except shares in thousands)" is very common.
     # The "thousands" only applies to share counts, not financial data.
-    if thou_count > 0 and mill_count > 0:
+    if thou_count > 0:
         thou_in_shares_context = bool(re.search(
             r'(?:shares?|number\s+of\s+shares?|share\s+data|per\s+share)'
             r'.*?(?:in\s+thousands|thousands)', t))
         if thou_in_shares_context:
-            return 1e6  # Financial data is in millions
+            # Verify ALL thousands refs are share-related (not just one)
+            all_thou_shares = True
+            for _m in re.finditer(r'in\s+thousands|\(\s*thousands', t):
+                _s = max(0, _m.start() - 120)
+                _ctx = t[_s:_m.end() + 10]
+                if not re.search(r'shares?|stock\s+option|stock\s+appre|average\s+number|denominator|antidilutive', _ctx):
+                    all_thou_shares = False
+                    break
+            if all_thou_shares:
+                if mill_count > 0:
+                    return 1e6  # Financial data is in millions, thousands is just shares
+                else:
+                    return _SCALE_DEFAULT  # Thousands only for shares, no financial scale
 
     if bill_count > 0 and bill_count >= thou_count and bill_count >= mill_count:
         return 1e9
@@ -1166,6 +1178,19 @@ TICKER_SECTOR_OVERRIDE = {
     'NEWT': 'bdc', 'NMFC': 'bdc', 'OBDC': 'bdc', 'OCSL': 'bdc', 'ORCC': 'bdc', 'OXSQ': 'bdc',
     'PFLT': 'bdc', 'PSEC': 'bdc', 'SAR': 'bdc', 'SCM': 'bdc', 'SLRC': 'bdc', 'SSSS': 'bdc',
     'TCPC': 'bdc', 'TRINL': 'bdc',
+
+    # additional aero_defense
+    'LUNR': 'aero_defense', 'RDW': 'aero_defense',
+    # additional consumer
+    'ACB': 'consumer', 'AMC': 'consumer', 'CGC': 'consumer', 'CRON': 'consumer', 'FNKO': 'consumer', 'GME': 'consumer', 'GO': 'consumer', 'HAS': 'consumer', 'LEVI': 'consumer', 'LVMUY': 'consumer', 'MAT': 'consumer', 'PFGC': 'consumer', 'PLNT': 'consumer', 'SNDL': 'consumer', 'SYY': 'consumer', 'TLRY': 'consumer', 'UNFI': 'consumer', 'USFD': 'consumer',
+    # additional ep
+    'CCJ': 'ep', 'DNN': 'ep', 'LEU': 'ep', 'NXE': 'ep', 'OKLO': 'ep', 'SMR': 'ep', 'UEC': 'ep', 'URG': 'ep', 'UUUU': 'ep',
+    # additional fintech
+    'BITF': 'fintech', 'BTBT': 'fintech', 'HIVE': 'fintech', 'HUT': 'fintech', 'MSTR': 'fintech',
+    # additional saas_tech
+    'IONQ': 'saas_tech', 'QUBT': 'saas_tech', 'RGTI': 'saas_tech',
+    # additional utility
+    'FLNC': 'utility', 'NRG': 'utility', 'TAL': 'utility',
 }
 
 
@@ -2178,14 +2203,23 @@ def detect_scale_explicit(text):
     # The "thousands" here only applies to share counts, NOT to financial data.
     # If "thousands" appears only in a share-exception context AND "millions" is also present,
     # the financial data scale is millions, not thousands.
-    if thou_count > 0 and mill_count > 0:
-        # Check if "thousands" only appears near share-related words
+    if thou_count > 0:
         thou_in_shares_context = bool(re.search(
             r'(?:shares?|number\s+of\s+shares?|share\s+data|per\s+share)'
             r'.*?(?:in\s+thousands|thousands)', t))
         if thou_in_shares_context:
-            # The thousands reference is about shares, not financials — treat as millions
-            return 1e6
+            all_thou_shares2 = True
+            for _m2 in re.finditer(r'in\s+thousands|\(\s*thousands', t):
+                _s2 = max(0, _m2.start() - 120)
+                _ctx2 = t[_s2:_m2.end() + 10]
+                if not re.search(r'shares?|stock\s+option|stock\s+appre|average\s+number|denominator|antidilutive', _ctx2):
+                    all_thou_shares2 = False
+                    break
+            if all_thou_shares2:
+                if mill_count > 0:
+                    return 1e6
+                else:
+                    return None  # No financial scale indicator found
 
     if bill_count > 0 and bill_count >= thou_count and bill_count >= mill_count:
         return 1e9
