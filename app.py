@@ -875,9 +875,8 @@ if not st.session_state.dcf_result:
             st.markdown('<div style="text-align:center;margin-top:20px;margin-bottom:-8px">', unsafe_allow_html=True)
             _, cta_col, _ = st.columns([1, 2, 1])
             with cta_col:
-                if st.button("Sign in with Google for full access", key="landing_signin", use_container_width=True):
-                    st.session_state["_auth_do_signin"] = True
-                    st.rerun()
+                from auth import _render_google_button
+                _render_google_button(height=46)
             st.markdown('</div>', unsafe_allow_html=True)
 
         # ── How it works ──
