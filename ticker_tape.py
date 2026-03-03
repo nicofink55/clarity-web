@@ -1,5 +1,6 @@
 """
 Ticker Tape module for Clarity
+Scrolling tape with live quotes via Yahoo Finance JSON APIs.
 """
 
 import os, json, sqlite3, streamlit as st
@@ -110,7 +111,7 @@ def _fetch_quotes(tickers_tuple):
 
 
 def _item_html(t, q):
-    tag = '<div class="tape-item" data-ticker="' + t + '">' 
+    tag = '<div class="tape-item" data-ticker="' + t + '">'
     if q:
         color = "#3ecf8e" if q["chg"] >= 0 else "#f85149"
         arrow = "&#9650;" if q["chg"] >= 0 else "&#9660;"
@@ -120,7 +121,7 @@ def _item_html(t, q):
             + '<span class="tape-sym">' + t + "</span>"
             + '<span class="tape-px">' + "{:,.2f}".format(q["price"]) + "</span>"
             + '<span class="tape-chg" style="color:' + color
-            + ";text-shadow:0 0 8px " + glow + '">' 
+            + ";text-shadow:0 0 8px " + glow + '">'
             + arrow + " " + "{:+.2f}".format(q["chg"])
             + " (" + "{:+.2f}%".format(q["pct"]) + ")</span></div>"
         )
@@ -131,8 +132,23 @@ def _item_html(t, q):
     )
 
 
-def _tape_css(dur):
-    return (
+def render_ticker_tape():
+    etfs, rolling = _build_tape_list()
+    all_tickers = etfs + rolling
+    quotes = _fetch_quotes(tuple(all_tickers))
+
+    static_html = ""
+    for t in etfs:
+        static_html += _item_html(t, quotes.get(t))
+
+    rolling_html = ""
+    for t in rolling:
+        rolling_html += _item_html(t, quotes.get(t))
+
+    scroll_strip = rolling_html + rolling_html
+    dur = max(25, len(rolling) * 4)
+
+    css = (
         "<style>"
         "@keyframes tickerScroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}"
         ".ticker-tape-wrap{"
@@ -172,7 +188,8 @@ def _tape_css(dur):
         "header[data-testid=stHeader]{"
         "background:transparent!important;height:36px!important;z-index:1002!important;"
         "pointer-events:none}"
-        "header[data-testid=stHeader] button,header[data-testid=stHeader] [data-testid]{pointer-events:auto}"
+        "header[data-testid=stHeader] button,"
+        "header[data-testid=stHeader] [data-testid]{pointer-events:auto}"
         ".block-container{padding-top:3.5rem!important}"
         "section[data-testid=stSidebar]{top:36px!important;z-index:1001!important}"
         "@media(max-width:768px){"
@@ -186,43 +203,26 @@ def _tape_css(dur):
         "</style>"
     )
 
-
-def render_ticker_tape():
-    etfs, rolling = _build_tape_list()
-    all_tickers = etfs + rolling
-    quotes = _fetch_quotes(tuple(all_tickers))
-
-    static_html = ""
-    for t in etfs:
-        static_html += _item_html(t, quotes.get(t))
-
-    rolling_html = ""
-    for t in rolling:
-        rolling_html += _item_html(t, quotes.get(t))
-
-    scroll_strip = rolling_html + rolling_html
-    dur = max(25, len(rolling) * 4)
-
     click_js = (
-        '<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" '
-        'style="display:none" onerror="'
-        "var tw=document.querySelector('.ticker-tape-wrap');" 
-        "if(tw&&!tw._cl){tw._cl=1;" 
-        "tw.addEventListener('click',function(e){" 
-        "var it=e.target.closest('.tape-item');" 
-        "if(it&&it.dataset&&it.dataset.ticker){" 
-        "window.location.href=window.location.pathname+'?ticker='+it.dataset.ticker;}" 
-        "})}" 
-        '">' 
+        '<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"'
+        ' style="display:none"'
+        " onerror=\"var w=document.querySelector('.ticker-tape-wrap');"
+        "if(w&&!w._cl){w._cl=1;"
+        "w.addEventListener('click',function(e){"
+        "var i=e.target.closest('.tape-item');"
+        "if(i&&i.dataset.ticker){"
+        "window.location.href=window.location.pathname+'?ticker='+i.dataset.ticker;}"
+        "});}"
+        '">'
     )
 
     return (
-        _tape_css(dur)
+        css
         + '<div class="ticker-tape-wrap">'
-        + '<div class="tape-static">' + static_html + '</div>'
+        + '<div class="tape-static">' + static_html + "</div>"
         + '<div class="tape-scroll-area">'
         + '<div class="ticker-tape-track">'
         + scroll_strip
-        + '</div></div></div>'
+        + "</div></div></div>"
         + click_js
     )
