@@ -20,9 +20,14 @@ from engine import (
     SECTOR_NAMES, SCENARIOS, BETAS,
 )
 
+from ticker_tape import render_ticker_tape, log_ticker_search
+
 from PIL import Image as _PILImage
 _favicon = _PILImage.open(os.path.join(os.path.dirname(__file__), "favicon.png"))
 st.set_page_config(page_title="Clarity — Equity Valuation Engine", page_icon=_favicon, layout="wide", initial_sidebar_state="collapsed")
+
+# ── Ticker Tape (must be before CSS block) ──
+st.markdown(render_ticker_tape(), unsafe_allow_html=True)
 
 # ════════════════════════════════════════
 #  THEME & CSS
@@ -518,6 +523,7 @@ def _format_eastern_time():
 
 def quick_run(ticker_val, form="10-K"):
     """Pull filing + market data + run valuation in one shot."""
+    log_ticker_search(ticker_val)
     st.session_state.ticker = ticker_val
     st.session_state.dcf_result = None
     cik, name = lookup_cik(ticker_val)
